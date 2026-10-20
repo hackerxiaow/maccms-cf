@@ -1,0 +1,234 @@
+/* ========================================================
+   MacCMS Serverless 运行兼容补充层
+   在海螺影视 Conch_M003 原生 CSS (style.css / white.css / black.css) 之上：
+   - 引入阿里图标字体库
+   - 懒加载图片动态占位 gif
+   - 白天（浅色）模式下正文与次级文字的无障碍对比度保障
+   - DPlayer 与搜索联想下拉浮层等客户端胶水样式
+   - 绝不破坏、绝不覆盖模板原生的 1170px 浮动与绝对定位栅格！
+   ======================================================== */
+
+@import url('/static/theme/fonts/iconfont.css');
+
+/* ---------- 1. 主题色与双模文字变量 ---------- */
+:root {
+  --hl-site: #0099ff;
+  --hl-subs: #00bbff;
+  --hl-radius: 10px;
+  --hl-bg: #fff;
+  --hl-card-bg: #fff;
+  --tx: #222222;
+  --tx-dim: #555555;
+  --tx-mute: #777777;
+}
+
+[data-skin="white"] {
+  --hl-bg: #fff;
+  --hl-card-bg: #fff;
+  --tx: #222222;
+  --tx-dim: #555555;
+  --tx-mute: #777777;
+}
+
+[data-skin="black"] {
+  --hl-bg: #1a1a1a;
+  --hl-card-bg: #1a1a1a;
+  --tx: #e6e8ed;
+  --tx-dim: #a6abb8;
+  --tx-mute: #757c8d;
+}
+
+/* ---------- 2. 浅色模式对比度增强（解决白天模式看不清问题） ---------- */
+/* 原生 white.css 普遍将次级文字写为 #999，在纯白底上对比度不足 */
+[data-skin="white"] .hl-text-muted,
+body:not([data-skin="black"]) .hl-text-muted {
+  color: var(--tx-mute, #777);
+}
+
+[data-skin="white"] .hl-item-sub,
+body:not([data-skin="black"]) .hl-item-sub {
+  color: var(--tx-dim, #555);
+}
+
+[data-skin="white"] .hl-filter-text,
+body:not([data-skin="black"]) .hl-filter-text {
+  color: var(--tx, #222);
+}
+
+[data-skin="white"] .hl-filter-list li a:not(.active),
+body:not([data-skin="black"]) .hl-filter-list li a:not(.active) {
+  color: var(--tx-dim, #555);
+}
+
+[data-skin="white"] .hl-article-box,
+body:not([data-skin="black"]) .hl-article-box {
+  color: var(--tx, #222);
+}
+
+[data-skin="white"] .hl-comm-text,
+body:not([data-skin="black"]) .hl-comm-text {
+  color: var(--tx-dim, #444);
+}
+
+[data-skin="white"] .hl-item-datas,
+body:not([data-skin="black"]) .hl-item-datas,
+[data-skin="white"] .hl-item-remarks,
+body:not([data-skin="black"]) .hl-item-remarks {
+  color: var(--tx-dim, #555);
+}
+
+[data-skin="white"] .hl-site-info p,
+body:not([data-skin="black"]) .hl-site-info p {
+  color: var(--tx-mute, #666);
+}
+
+/* 排行榜侧栏标题白天白底下的深色保证 */
+[data-skin="white"] .hl-vod-rank .hl-rb-title a,
+body:not([data-skin="black"]) .hl-vod-rank .hl-rb-title a {
+  color: var(--tx, #222) !important;
+}
+
+/* 排行榜序号的 1/2/3 名原生配色保留；4 名之后原版回落到 #999，
+   白天模式偏淡，这里加深到 #666 保证可读（不加背景，保持模板的纯文字序号设计） */
+[data-skin="white"] .conch-content .hl-part-nums,
+body:not([data-skin="black"]) .conch-content .hl-part-nums {
+  color: #666;
+}
+[data-skin="white"] .conch-content .hl-part-nums.hl-num-1,
+body:not([data-skin="black"]) .conch-content .hl-part-nums.hl-num-1 { color: #fc4274; }
+[data-skin="white"] .conch-content .hl-part-nums.hl-num-2,
+body:not([data-skin="black"]) .conch-content .hl-part-nums.hl-num-2 { color: #d9532a; }
+[data-skin="white"] .conch-content .hl-part-nums.hl-num-3,
+body:not([data-skin="black"]) .conch-content .hl-part-nums.hl-num-3 { color: #b57b00; }
+
+/* 页脚悬浮按钮展开标签：主题色底 + 白字，避免灰字压蓝底看不清 */
+.conch-footer .hl-foot-extra .hl-fe-list a span {
+  color: #fff;
+}
+.hl-fe-list a {
+  color: var(--tx-dim, #555);
+}
+/* 原生默认隐藏返回顶部按钮；本站为长列表页面，直接常显 */
+.hl-foot-extra .hl-fe-list .hl-back-item a,
+.hl-foot-extra .hl-fe-list .hl-back-item.hl-back-show a {
+  display: inline-block;
+}
+
+/* ---------- 3. 懒加载动态占位 ---------- */
+.hl-lazy {
+  background-image: url('/static/theme/img/load.gif');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 32px;
+}
+
+/* ---------- 4. 搜索框联想下拉浮层 ---------- */
+.hl-sh-box {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 300;
+  background: var(--hl-card-bg, #fff);
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  max-height: 320px;
+  overflow-y: auto;
+  display: none;
+}
+
+.hl-sh-box:empty { display: none; }
+
+.hl-search-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hl-search-list li {
+  padding: 9px 14px;
+  font-size: .86rem;
+  cursor: pointer;
+  transition: background .2s;
+}
+
+.hl-search-list li a {
+  display: block;
+  color: inherit;
+}
+
+.hl-search-list li:hover {
+  background: var(--hl-site, #0099ff);
+  color: #fff;
+}
+
+/* ---------- 5. 详情页与播放器适配（仅补齐静态页缺失的定位上下文） ---------- */
+.hl-has-item {
+  position: relative;
+}
+
+/* 「影片信息」弹层：原生只有一个 fixed 全屏容器，需补默认隐藏与打开态 */
+.hl-full-items {
+  display: none;
+}
+.hl-full-items.show {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  padding: 40px 20px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, .72);
+}
+.hl-full-items .hl-full-box {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 26px;
+  border-radius: 12px;
+  background: var(--hl-card-bg, #fff);
+  position: relative;
+}
+.hl-full-items .hl-full-title { margin: 0 0 16px; font-size: 1.15rem; font-weight: 800; }
+.hl-full-items ul { list-style: none; margin: 0; padding: 0; }
+.hl-full-items li { padding: 5px 0; font-size: .87rem; }
+.hl-full-items li em { font-style: normal; margin-right: 6px; }
+.hl-full-items li.blurb { line-height: 1.75; padding-top: 12px; }
+
+/* 播放器：用原生 16:9 padding 比例撑高，播放器绝对填充 */
+.conch-content .hl-paly-players .hl-player-wrap {
+  height: 0;
+  padding-bottom: 56.25%;
+}
+.conch-content .hl-paly-players .hl-player-wrap #dplayer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.hl-player-wrap iframe,
+.hl-player-wrap video {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* ---------- 6. 通用状态与空占位 ---------- */
+.hl-empty,
+.hl-loading {
+  text-align: center;
+  padding: 3rem 0;
+  color: var(--tx-mute, #777);
+  font-size: .92rem;
+}
+
+/* ---------- 7. 移动端抽屉开关与返回顶部平滑支持 ---------- */
+.conch-menus.active {
+  display: block !important;
+  transform: translateX(0) !important;
+}
+
+.conch-ms-overlay.active {
+  display: block !important;
+}

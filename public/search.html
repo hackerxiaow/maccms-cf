@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>搜索结果 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item">
+    <div style="padding:20px 0;">
+      <div class="hl-search-form" style="max-width:520px;margin-bottom:18px;">
+        <input type="text" id="searchInput2" class="hl-search-wd" placeholder="请输入片名、演员或导演" value="">
+        <button class="hl-search-submit" type="button" onclick="doSearch(document.getElementById('searchInput2').value)"><i class="iconfont hl-icon-sousuo"></i></button>
+      </div>
+
+      <div class="hl-site-tabs" id="searchTabs">
+        <a href="javascript:;" class="active" data-mid="1">影视</a>
+        <a href="javascript:;" data-mid="2">资讯</a>
+      </div>
+
+      <div class="hl-rb-head clearfix">
+        <h2 class="hl-rb-title" id="searchMeta">搜索结果</h2>
+      </div>
+
+      <ul class="hl-vod-list clearfix" id="searchList"></ul>
+
+      <div class="hl-empty" id="searchEmpty" style="display:none;">
+        没有找到相关内容，换个关键词试试吧
+      </div>
+
+      <div id="pager"></div>
+    </div>
+  </div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+$(function () {
+  Theme.init().then(function () { Layout.render('search');
+
+    var kw = new URLSearchParams(location.search).get('wd') || '';
+    var searchPage = 1;
+    var searchMid = 1;
+
+    $('#searchInput2').val(kw);
+    if (kw) { document.title = kw + ' 搜索结果 - MacCMS 影视'; }
+
+    $('#searchTabs').on('click', 'a', function () {
+      $('#searchTabs a').removeClass('active');
+      $(this).addClass('active');
+      searchMid = parseInt($(this).data('mid'), 10);
+      searchPage = 1;
+      doSearchResult();
+    });
+
+    function doSearchResult() {
+      var list = $('#searchList');
+      if (!kw) { list.html(''); $('#searchEmpty').hide(); $('#searchMeta').text('请输入搜索关键词'); return; }
+      list.html('<li class="hl-loading" style="grid-column:1/-1;">正在搜索…</li>');
+
+      if (searchMid === 2) {
+        API.get('/api/art/list', { wd: kw, page: searchPage, limit: 15 }).then(function (j) {
+          if (j.code !== 0) { list.html('<li class="hl-empty">搜索失败</li>'); return; }
+          $('#searchMeta').text('资讯搜索：共 ' + j.data.total + ' 条');
+          if (!j.data.list.length) { list.html(''); $('#searchEmpty').show(); $('#pager').html(''); return; }
+          $('#searchEmpty').hide();
+          list.html('');
+          j.data.list.forEach(function (a) {
+            list.append(
+              '<li class="hl-list-item hl-col-xs-12">' +
+              '<a href="/art.html?id=' + a.art_id + '" class="hl-art-item">' +
+              '<div class="hl-art-thumb hl-lazy" data-original="' + U.esc(a.art_pic || U.placeholder(a.art_name, U.hash(a.art_name))) + '"></div>' +
+              '<div class="hl-art-content">' +
+              '<div class="hl-art-title hl-lc-2 hl-text-site">' + U.esc(a.art_name) + '</div>' +
+              '<div class="hl-art-sub hl-text-muted">' + U.esc(a.art_blurb || '') + '</div>' +
+              '</div></a></li>'
+            );
+          });
+          Interact.lazy(list[0]);
+          $('#pager').html(Card.page(j.data.page, j.data.pagecount, '/search.html?wd=' + encodeURIComponent(kw)));
+        });
+        return;
+      }
+
+      API.get('/api/vod/list', { wd: kw, page: searchPage, limit: 24 }).then(function (j) {
+        if (j.code !== 0) { list.html('<li class="hl-empty">搜索失败</li>'); return; }
+        $('#searchMeta').text('影视搜索：共 ' + j.data.total + ' 部');
+        if (!j.data.list.length) { list.html(''); $('#searchEmpty').show(); $('#pager').html(''); return; }
+        $('#searchEmpty').hide();
+        list.html('');
+        j.data.list.forEach(function (v) {
+          list.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+        });
+        Interact.lazy(list[0]);
+        $('#pager').html(Card.page(j.data.page, j.data.pagecount, '/search.html?wd=' + encodeURIComponent(kw)));
+      });
+    }
+
+    doSearchResult();
+
+  });
+});
+
+function doSearch(kw) {
+  kw = (kw || '').trim();
+  if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
+}
+
+</script>
+</body>
+</html>

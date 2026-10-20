@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MacCMS 云原生控制台 - 后台管理系统</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    :root {
+      --sidebar-width: 260px;
+    }
+    body {
+      background: #090a0d;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    .admin-container {
+      display: flex;
+      min-height: 100vh;
+    }
+    .admin-sidebar {
+      width: var(--sidebar-width);
+      background: #0f1117;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 100;
+    }
+    .admin-main {
+      margin-left: var(--sidebar-width);
+      flex: 1;
+      padding: 2rem 2.5rem;
+      background: #090a0d;
+      min-height: 100vh;
+    }
+    .sidebar-logo {
+      padding: 1.5rem;
+      font-size: 1.25rem;
+      font-weight: 900;
+      color: #fff;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .menu-group {
+      list-style: none;
+      padding: 1rem 0.75rem;
+      margin: 0;
+      flex: 1;
+      overflow-y: auto;
+    }
+    .menu-item {
+      padding: 0.7rem 1rem;
+      border-radius: var(--radius-md);
+      color: #94a3b8;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.35rem;
+      transition: var(--transition);
+    }
+    .menu-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+    }
+    .menu-item.active {
+      background: var(--primary-gradient);
+      color: #fff;
+      font-weight: 700;
+      box-shadow: 0 4px 15px rgba(255, 42, 85, 0.35);
+    }
+    .admin-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+    .metric-card {
+      background: #131620;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+    .metric-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--primary);
+      opacity: 0.8;
+    }
+    .metric-num {
+      font-size: 2.2rem;
+      font-weight: 900;
+      color: #fff;
+      margin-top: 0.5rem;
+    }
+    .admin-card {
+      background: #131620;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .data-table th, .data-table td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      text-align: left;
+    }
+    .data-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .data-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .input-box {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      font-size: 0.88rem;
+      outline: none;
+      transition: var(--transition);
+      width: 100%;
+    }
+    .input-box:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 10px rgba(255, 42, 85, 0.25);
+    }
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+    .form-label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 0.4rem;
+      display: block;
+    }
+    .action-btn {
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+      transition: var(--transition);
+    }
+    .action-btn:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+    .action-btn.del { color: #f87171; border-color: rgba(248, 113, 113, 0.3); }
+    .action-btn.del:hover { background: rgba(248, 113, 113, 0.15); }
+    .btn-create {
+      padding: 0.5rem 1.25rem;
+      border-radius: var(--radius-full);
+      background: var(--primary-gradient);
+      color: #fff;
+      font-size: 0.88rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(255, 42, 85, 0.4);
+    }
+    .log-box {
+      background: #060709;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      font-family: Consolas, monospace;
+      font-size: 0.85rem;
+      color: #38bdf8;
+      max-height: 280px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    /* 弹窗遮罩 */
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.78);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    }
+    .modal-content {
+      background: #141722;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      width: 90%;
+      max-width: 680px;
+      max-height: 88vh;
+      overflow-y: auto;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.8);
+    }
+    /* 登录窗口 */
+    #loginWrap {
+      position: fixed;
+      inset: 0;
+      background: #090a0d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .login-box {
+      background: #131620;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: var(--radius-lg);
+      padding: 3rem 2.5rem;
+      width: 380px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 登录视窗 (未登录拦截) -->
+  <div id="loginWrap">
+    <div class="login-box">
+      <div style="font-size: 2.2rem; margin-bottom: 0.5rem;"></div>
+      <h2 style="margin: 0 0 0.5rem 0; font-size: 1.5rem; color: #fff;">MacCMS 管理中心</h2>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 2rem;">Cloudflare D1 边缘无服务器原生架构</p>
+      
+      <div style="margin-bottom: 1rem; text-align: left;">
+        <label class="form-label">管理员账号</label>
+        <input class="input-box" type="text" id="adminUser" placeholder="默认账号: admin">
+      </div>
+      <div style="margin-bottom: 1.5rem; text-align: left;">
+        <label class="form-label">管理员密码</label>
+        <input class="input-box" type="password" id="adminPwd" placeholder="默认密码: admin888">
+      </div>
+
+      <button class="btn-create" style="width: 100%; padding: 0.75rem;" onclick="doAdminLogin()">登 录 控 制 台</button>
+      <div id="loginTip" style="color: #f87171; font-size: 0.85rem; margin-top: 1rem; display: none;"></div>
+    </div>
+  </div>
+
+  <!-- 后台主界面容器 -->
+  <div class="admin-container" id="adminContainer" style="display: none;">
+    <!-- 左侧导航 -->
+    <aside class="admin-sidebar">
+      <div class="sidebar-logo">
+        <span style="color: var(--primary);"></span> MacCMS 极速管理
+      </div>
+      <ul class="menu-group">
+        <li class="menu-item active" onclick="switchNav('overview')">📊 运行概览</li>
+        <li class="menu-item" onclick="switchNav('vod')">🎬 视频影视库</li>
+        <li class="menu-item" onclick="switchNav('type')">📂 分类体系</li>
+        <li class="menu-item" onclick="switchNav('art')">📰 文章资讯</li>
+        <li class="menu-item" onclick="switchNav('topic')">🏷️ 影视专题</li>
+        <li class="menu-item" onclick="switchNav('collect')">⚡️ 采集与映射</li>
+        <li class="menu-item" onclick="switchNav('player')">▶️ 播放器配置</li>
+        <li class="menu-item" onclick="switchNav('comment')">💬 影评管理</li>
+        <li class="menu-item" onclick="switchNav('link')">🔗 友情链接</li>
+        <li class="menu-item" onclick="switchNav('theme')">🎨 主题全局配置</li>
+        <li class="menu-item" onclick="switchNav('config')">⚙️ 系统配置</li>
+        <li class="menu-item" onclick="window.open('/', '_blank')" style="margin-top: 1.5rem; color: #38bdf8;">🌐 访问前台首页 ↗</li>
+        <li class="menu-item" onclick="doLogout()" style="color: #f87171;">🚪 安全退出登录</li>
+      </ul>
+    </aside>
+
+    <!-- 右侧内容主视窗 -->
+    <main class="admin-main">
+      <div class="admin-topbar">
+        <div>
+          <h2 id="viewHeading" style="margin: 0; font-size: 1.5rem; font-weight: 800; color: #fff;">系统概览</h2>
+          <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 4px;">MacCMS Cloudflare Serverless 控制台</div>
+        </div>
+        <div style="font-size: 0.9rem; color: var(--text-muted);">
+          管理员身份: <b id="lblAdminUser" style="color: #fff;">admin</b>
+        </div>
+      </div>
+
+      <!-- 1. 概览视图 -->
+      <section id="view-overview" class="view-panel">
+        <div class="metric-grid">
+          <div class="metric-card">
+            <span style="font-size: 0.85rem; color: var(--text-muted);">已收录影视影片</span>
+            <div class="metric-num" id="statVod">0</div>
+          </div>
+          <div class="metric-card">
+            <span style="font-size: 0.85rem; color: var(--text-muted);">全站分类层级</span>
+            <div class="metric-num" id="statType" style="color: #38bdf8;">0</div>
+          </div>
+          <div class="metric-card">
+            <span style="font-size: 0.85rem; color: var(--text-muted);">配置采集节点</span>
+            <div class="metric-num" id="statNodes" style="color: var(--gold);">0</div>
+          </div>
+          <div class="metric-card">
+            <span style="font-size: 0.85rem; color: var(--text-muted);">今日增量更新</span>
+            <div class="metric-num" id="statToday" style="color: #4ade80;">0</div>
+          </div>
+        </div>
+
+        <div class="admin-card">
+          <h3 style="margin-top: 0; font-size: 1.15rem; color: #fff;">💡 开放标准接口协议</h3>
+          <p style="font-size: 0.88rem; color: #94a3b8; line-height: 1.8;">
+            本平台已原生实现 MacCMS 官方标准的资源开放互联体系：<br>
+            • <b>视频采集接口 (Provide VOD)</b>：<code>/api.php/provide/vod/?ac=list</code> (分类概要) 或 <code>?ac=videolist&h=24</code> (今日更新)<br>
+            • <b>标准 RSS 5.1 XML 格式</b>：追加 <code>&at=xml</code> 即可直接供外部采集器对接<br>
+            • <b>文章采集接口 (Provide Art)</b>：<code>/api.php/provide/art/?ac=list</code><br>
+            • <b>定时增量调度 (Timming API)</b>：<code>/api.php/timming/index?h=24</code>
+          </p>
+        </div>
+      </section>
+
+      <!-- 2. 视频管理视图 -->
+      <section id="view-vod" class="view-panel" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+          <div style="display: flex; gap: 0.5rem;">
+            <input class="input-box" id="vodSearchKw" placeholder="搜索片名关键词..." style="width: 240px;">
+            <button class="action-btn" onclick="loadVodTable(1)">搜索</button>
+          </div>
+          <button class="btn-create" onclick="openVodModal()">+ 新增视频</button>
+        </div>
+
+        <div class="admin-card" style="padding: 0; overflow-x: auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 60px;">ID</th>
+                <th>片名</th>
+                <th>分类</th>
+                <th>状态/备注</th>
+                <th>播放来源</th>
+                <th>更新时间</th>
+                <th style="width: 140px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="vodTbody"></tbody>
+          </table>
+        </div>
+        <div id="vodPageNav" style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;"></div>
+      </section>
+
+      <!-- 3. 分类体系视图 -->
+      <section id="view-type" class="view-panel" style="display: none;">
+        <div style="text-align: right; margin-bottom: 1rem;">
+          <button class="btn-create" onclick="openTypeModal()">+ 新增分类</button>
+        </div>
+        <div class="admin-card" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>排序</th>
+                <th>分类名称</th>
+                <th>英文拼音别名</th>
+                <th>归属层级</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="typeTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4. 文章资讯视图 -->
+      <section id="view-art" class="view-panel" style="display: none;">
+        <div style="text-align: right; margin-bottom: 1rem;">
+          <button class="btn-create" onclick="openArtModal()">+ 发布文章</button>
+        </div>
+        <div class="admin-card" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>文章标题</th>
+                <th>作者/来源</th>
+                <th>点击量</th>
+                <th>发布时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="artTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 5. 影视专题视图 -->
+      <section id="view-topic" class="view-panel" style="display: none;">
+        <div style="text-align: right; margin-bottom: 1rem;">
+          <button class="btn-create" onclick="openTopicModal()">+ 创建专题</button>
+        </div>
+        <div class="admin-card" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>专题名称</th>
+                <th>关联影片 IDs</th>
+                <th>点击热度</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="topicTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 6. 采集与映射视图 -->
+      <section id="view-collect" class="view-panel" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h3 style="margin: 0; font-size: 1.15rem; color: #fff;">上游资源站采集管理</h3>
+          <button class="btn-create" onclick="openNodeModal()">+ 新增采集节点</button>
+        </div>
+        <div class="admin-card" style="padding: 0; margin-bottom: 1.5rem;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>节点名称</th>
+                <th>接口地址</th>
+                <th>格式</th>
+                <th>上次运行</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="nodeTbody"></tbody>
+          </table>
+        </div>
+
+        <div class="admin-card">
+          <h3 style="margin-top: 0; font-size: 1.15rem; color: #fff;">自动化任务与日志终端</h3>
+          <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap;">
+            <button class="btn-create" onclick="triggerCollect(24)">⚡️ 采集今日更新 (24小时)</button>
+            <button class="action-btn" onclick="triggerCollect(1)">⏱️ 采集近1小时</button>
+            <button class="action-btn del" onclick="triggerCollect(0)">🔄 全量深度采集</button>
+          </div>
+          <div class="log-box" id="collectLogOutput">系统准备就绪：点击上方按钮以执行采集任务与智能合并入库...</div>
+        </div>
+      </section>
+
+      <!-- 7. 播放器配置视图 -->
+      <section id="view-player" class="view-panel" style="display: none;">
+        <div style="text-align: right; margin-bottom: 1rem;">
+          <button class="btn-create" onclick="openPlayerModal()">+ 新增播放器</button>
+        </div>
+        <div class="admin-card" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>排序</th>
+                <th>编码 (code)</th>
+                <th>播放器名称</th>
+                <th>绑定解析接口前缀</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="playerTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 8. 影评管理视图 -->
+      <section id="view-comment" class="view-panel" style="display: none;">
+        <div class="admin-card" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>关联影片</th>
+                <th>影迷昵称</th>
+                <th>评论内容</th>
+                <th>时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="commentTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 9. 友情链接视图 -->
+      <section id="view-link" class="view-panel" style="display: none;">
+        <div style="text-align: right; margin-bottom: 1rem;">
+          <button class="btn-create" onclick="openLinkModal()">+ 新增友情链接</button>
+        </div>
+        <div class="admin-card" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>站点名称</th>
+                <th>跳转链接</th>
+                <th>排序</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="linkTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 10. 系统配置视图 -->
+      <section id="view-config" class="view-panel" style="display: none;">
+        <div class="admin-card" style="max-width: 650px;">
+          <h3 style="margin-top: 0; font-size: 1.15rem; color: #fff;">全局参数与安全设置</h3>
+          <div class="form-group">
+            <label class="form-label">网站品牌名称</label>
+            <input class="input-box" id="sysSiteName">
+          </div>
+          <div class="form-group">
+            <label class="form-label">网站域名 URL</label>
+            <input class="input-box" id="sysSiteUrl">
+          </div>
+          <div class="form-group">
+            <label class="form-label">首页 SEO 关键词</label>
+            <input class="input-box" id="sysKeywords">
+          </div>
+          <div class="form-group">
+            <label class="form-label">重设管理员密码 (留空保持原密码不变)</label>
+            <input class="input-box" type="password" id="sysNewPwd" placeholder="输入新的安全密码">
+          </div>
+          <button class="btn-create" onclick="saveSystemConfig()">保存全局配置</button>
+        </div>
+      </section>
+
+      <!-- 11. 主题配置视图 (海螺 Conch_M003 全局控制) -->
+      <section id="view-theme" class="view-panel" style="display: none;">
+        <div class="admin-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
+            <div>
+              <h3 style="margin:0;font-size:1.15rem;color:#fff;">🎨 前台主题全局配置</h3>
+              <p style="margin:4px 0 0;font-size:.82rem;color:var(--text-muted);">
+                移植自海螺影视 Conch_M003 主题后台配置项，保存后前台即时生效（无需重新部署）
+              </p>
+            </div>
+            <div style="display:flex;gap:0.5rem;">
+              <button class="action-btn" onclick="previewTheme()">👁 预览前台</button>
+              <button class="action-btn" onclick="resetThemeGroup()">↺ 重置本组</button>
+              <button class="btn-create" onclick="saveThemeConfig()">保存主题配置</button>
+            </div>
+          </div>
+
+          <!-- 分组切换 -->
+          <div class="hl-site-tabs" id="themeTabs" style="margin-bottom:1.5rem;"></div>
+
+          <!-- 配置项容器 -->
+          <div id="themeFormWrap">
+            <div style="text-align:center;padding:2rem;color:var(--text-muted);">正在加载主题配置…</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 分类绑定弹窗 -->
+  <div class="modal-mask" id="bindModal">
+    <div class="modal-content">
+      <h3 style="margin-top: 0; color: #fff;">绑定上游分类映射</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted);">自动比对远程分类字典，未映射分类在采集时将自动跳过。</p>
+      <div id="bindWrap" style="max-height: 420px; overflow-y: auto; margin-bottom: 1.5rem;"></div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button class="action-btn" onclick="closeModal('bindModal')">取消</button>
+        <button class="btn-create" onclick="saveBinds()">保存映射配置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 视频编辑弹窗 -->
+  <div class="modal-mask" id="vodModal">
+    <div class="modal-content">
+      <h3 style="margin-top: 0; color: #fff;" id="vodModalTitle">编辑影视</h3>
+      <input type="hidden" id="vId">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label class="form-label">影片名称</label>
+          <input class="input-box" id="vName">
+        </div>
+        <div class="form-group">
+          <label class="form-label">所属分类</label>
+          <select class="input-box" id="vTypeId"></select>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label class="form-label">海报图片 URL</label>
+          <input class="input-box" id="vPic">
+        </div>
+        <div class="form-group">
+          <label class="form-label">状态/更新集数</label>
+          <input class="input-box" id="vRemarks">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">播放来源标识 (以 $$$ 分隔，如: dplayer$$$kkm3u8)</label>
+        <input class="input-box" id="vPlayFrom">
+      </div>
+      <div class="form-group">
+        <label class="form-label">播放地址数据 (格式: 第01集$url#第02集$url$$$...)</label>
+        <textarea class="input-box" id="vPlayUrl" rows="4" style="font-family: Consolas, monospace;"></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button class="action-btn" onclick="closeModal('vodModal')">取消</button>
+        <button class="btn-create" onclick="saveVodForm()">保存入库</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api/admin';
+    let token = localStorage.getItem('maccms_admin_token') || '';
+    let globalTypes = [];
+    let curBindingNodeId = 0;
+
+    function authHeader() {
+      return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
+    }
+
+    async function doAdminLogin() {
+      const u = document.getElementById('adminUser').value.trim();
+      const p = document.getElementById('adminPwd').value.trim();
+      const tip = document.getElementById('loginTip');
+
+      try {
+        const res = await fetch(`${API}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        const json = await res.json();
+        if (json.code === 0 && json.data.token) {
+          token = json.data.token;
+          localStorage.setItem('maccms_admin_token', token);
+          localStorage.setItem('maccms_admin_user', json.data.username);
+          document.getElementById('loginWrap').style.display = 'none';
+          document.getElementById('adminContainer').style.display = 'flex';
+          initConsole();
+        } else {
+          tip.textContent = json.msg || '登录失败';
+          tip.style.display = 'block';
+        }
+      } catch (err) {
+        tip.textContent = '请求异常: ' + err.message;
+        tip.style.display = 'block';
+      }
+    }
+
+    function doLogout() {
+      localStorage.removeItem('maccms_admin_token');
+      location.reload();
+    }
+
+    function switchNav(nav) {
+      document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+      event?.currentTarget?.classList.add('active');
+
+      document.querySelectorAll('.view-panel').forEach(p => p.style.display = 'none');
+      const target = document.getElementById(`view-${nav}`);
+      if (target) target.style.display = 'block';
+
+      const map = {
+        overview: '运行概览', vod: '视频影视库', type: '分类体系',
+        art: '文章资讯', topic: '影视专题', collect: '采集中心',
+        player: '播放器配置', comment: '影评管理', link: '友情链接',
+        theme: '主题全局配置', config: '全局设置'
+      };
+      document.getElementById('viewHeading').textContent = map[nav] || '';
+
+      if (nav === 'overview') loadOverviewStats();
+      if (nav === 'vod') loadVodTable(1);
+      if (nav === 'type') loadTypeTable();
+      if (nav === 'art') loadArtTable();
+      if (nav === 'topic') loadTopicTable();
+      if (nav === 'collect') loadNodeTable();
+      if (nav === 'player') loadPlayerTable();
+      if (nav === 'comment') loadCommentTable();
+      if (nav === 'link') loadLinkTable();
+      if (nav === 'theme') loadThemeConfig();
+      if (nav === 'config') loadConfigView();
+    }
+
+    // ===== 主题全局配置 (海螺 Conch_M003) =====
+    let themeData = null;
+    let themeCurGroup = 'general';
+    let themeDraft = {};
+
+    async function loadThemeConfig() {
+      const wrap = document.getElementById('themeFormWrap');
+      wrap.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted);">正在加载主题配置…</div>';
+      try {
+        const res = await fetch(`${API}/theme`, { headers: authHeader() });
+        const json = await res.json();
+        if (json.code !== 0) { wrap.innerHTML = '<div style="color:#f87171;padding:1rem;">加载失败</div>'; return; }
+        themeData = json.data;
+        themeDraft = {};
+        themeData.items.forEach(it => { themeDraft[it.key] = it.value; });
+
+        // 渲染分组标签
+        const tabs = document.getElementById('themeTabs');
+        tabs.innerHTML = '';
+        themeData.groups.forEach(g => {
+          const a = document.createElement('a');
+          a.href = 'javascript:;';
+          a.textContent = `${g.icon} ${g.title}`;
+          if (g.key === themeCurGroup) a.className = 'active';
+          a.onclick = () => {
+            themeCurGroup = g.key;
+            tabs.querySelectorAll('a').forEach(x => x.classList.remove('active'));
+            a.classList.add('active');
+            renderThemeForm();
+          };
+          tabs.appendChild(a);
+        });
+
+        renderThemeForm();
+      } catch (e) {
+        wrap.innerHTML = `<div style="color:#f87171;padding:1rem;">异常: ${e.message}</div>`;
+      }
+    }
+
+    function renderThemeForm() {
+      const wrap = document.getElementById('themeFormWrap');
+      const items = themeData.items.filter(it => it.group === themeCurGroup);
+      if (!items.length) { wrap.innerHTML = '<div class="hl-empty" style="padding:2rem;text-align:center;color:var(--text-muted);">该分组暂无配置项</div>'; return; }
+
+      let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;">';
+      items.forEach(it => {
+        const v = themeDraft[it.key] !== undefined ? themeDraft[it.key] : it.value;
+        html += '<div class="form-group" style="margin-bottom:0;">';
+        html += `<label class="form-label" title="${it.key}">${it.title}</label>`;
+
+        if (it.type === 'switch') {
+          const checked = (v === '1' || v === 'true') ? 'checked' : '';
+          html += `<label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+            <input type="checkbox" ${checked} onchange="themeDraft['${it.key}']=this.checked?'1':'0'" style="width:18px;height:18px;cursor:pointer;">
+            <span style="font-size:0.85rem;color:var(--text-muted);">启用 / 关闭</span>
+          </label>`;
+        } else if (it.type === 'color') {
+          html += `<div style="display:flex;gap:0.5rem;align-items:center;">
+            <input type="color" value="${v || '#0099ff'}" oninput="themeDraft['${it.key}']=this.value;this.nextElementSibling.value=this.value" style="width:48px;height:36px;border:none;background:none;cursor:pointer;">
+            <input class="input-box" value="${v || ''}" oninput="themeDraft['${it.key}']=this.value;this.previousElementSibling.value=this.value">
+          </div>`;
+        } else if (it.type === 'textarea') {
+          html += `<textarea class="input-box" rows="3" oninput="themeDraft['${it.key}']=this.value">${v || ''}</textarea>`;
+        } else if (it.type === 'number') {
+          html += `<input class="input-box" type="number" value="${v || ''}" oninput="themeDraft['${it.key}']=this.value">`;
+        } else {
+          html += `<input class="input-box" value="${(v || '').replace(/"/g, '&quot;')}" oninput="themeDraft['${it.key}']=this.value">`;
+        }
+        html += `<div style="font-size:0.72rem;color:var(--text-dark,#555);margin-top:3px;font-family:monospace;">${it.key}</div>`;
+        html += '</div>';
+      });
+      html += '</div>';
+      wrap.innerHTML = html;
+    }
+
+    async function saveThemeConfig() {
+      try {
+        const res = await fetch(`${API}/theme/save`, {
+          method: 'POST',
+          headers: authHeader(),
+          body: JSON.stringify({ entries: themeDraft })
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          alert(json.msg || '主题配置已保存，前台刷新即可看到效果');
+          loadThemeConfig();
+        } else {
+          alert(json.msg || '保存失败');
+        }
+      } catch (e) { alert('保存异常: ' + e.message); }
+    }
+
+    async function resetThemeGroup() {
+      if (!confirm('确定将该分组的所有配置重置为默认值？')) return;
+      try {
+        const res = await fetch(`${API}/theme/reset`, {
+          method: 'POST',
+          headers: authHeader(),
+          body: JSON.stringify({ group: themeCurGroup })
+        });
+        const json = await res.json();
+        if (json.code === 0) { alert(json.msg); loadThemeConfig(); }
+        else alert(json.msg || '重置失败');
+      } catch (e) { alert('重置异常: ' + e.message); }
+    }
+
+    function previewTheme() {
+      window.open('/', '_blank');
+    }
+
+    // 1. 运行概览
+    async function loadOverviewStats() {
+      try {
+        const res = await fetch(`${API}/overview`, { headers: authHeader() });
+        const json = await res.json();
+        if (json.code === 0) {
+          document.getElementById('statVod').textContent = json.data.total_vod;
+          document.getElementById('statType').textContent = json.data.total_type;
+          document.getElementById('statNodes').textContent = json.data.total_nodes;
+          document.getElementById('statToday').textContent = json.data.today_updated;
+        }
+      } catch (e) {}
+    }
+
+    // 2. 视频列表
+    async function loadVodTable(page = 1) {
+      const kw = document.getElementById('vodSearchKw').value.trim();
+      const url = new URL(`${window.location.origin}${API}/vod/list`);
+      url.searchParams.set('page', page);
+      url.searchParams.set('limit', 15);
+      if (kw) url.searchParams.set('wd', kw);
+
+      const tbody = document.getElementById('vodTbody');
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">载入中...</td></tr>';
+
+      try {
+        const res = await fetch(url.toString(), { headers: authHeader() });
+        const json = await res.json();
+        if (json.code === 0) {
+          tbody.innerHTML = '';
+          json.data.list.forEach(v => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td>${v.vod_id}</td>
+              <td><b>${v.vod_name}</b></td>
+              <td><span class="actor-tag">${v.type_name || v.type_id}</span></td>
+              <td>${v.vod_remarks || '完结'}</td>
+              <td><code>${(v.vod_play_from || '').replace(/\$\$\$/g, ' | ')}</code></td>
+              <td>${v.vod_time ? new Date(v.vod_time * 1000).toLocaleString() : '-'}</td>
+              <td>
+                <button class="action-btn" onclick="editVod(${v.vod_id})">编辑</button>
+                <button class="action-btn del" onclick="deleteVod(${v.vod_id})">删除</button>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+          renderVodPageNav(json.data.page, json.data.pagecount);
+        }
+      } catch (e) {}
+    }
+
+    function renderVodPageNav(page, pagecount) {
+      const nav = document.getElementById('vodPageNav');
+      nav.innerHTML = '';
+      if (pagecount <= 1) return;
+      if (page > 1) nav.innerHTML += `<button class="action-btn" onclick="loadVodTable(${page - 1})">上一页</button>`;
+      nav.innerHTML += `<span style="font-size:0.85rem;padding:0.3rem 0.6rem;">${page} / ${pagecount}</span>`;
+      if (page < pagecount) nav.innerHTML += `<button class="action-btn" onclick="loadVodTable(${page + 1})">下一页</button>`;
+    }
+
+    async function editVod(id) {
+      const res = await fetch(`${API}/vod/${id}`, { headers: authHeader() });
+      const json = await res.json();
+      if (json.code === 0 && json.data) {
+        const v = json.data;
+        document.getElementById('vId').value = v.vod_id;
+        document.getElementById('vName').value = v.vod_name;
+        document.getElementById('vTypeId').value = v.type_id;
+        document.getElementById('vPic').value = v.vod_pic;
+        document.getElementById('vRemarks').value = v.vod_remarks;
+        document.getElementById('vPlayFrom').value = v.vod_play_from;
+        document.getElementById('vPlayUrl').value = v.vod_play_url;
+        document.getElementById('vodModalTitle').textContent = `编辑影片 (ID: ${v.vod_id})`;
+        openModal('vodModal');
+      }
+    }
+
+    function openVodModal() {
+      document.getElementById('vId').value = '';
+      document.getElementById('vName').value = '';
+      document.getElementById('vPic').value = '';
+      document.getElementById('vRemarks').value = '4K/HD';
+      document.getElementById('vPlayFrom').value = 'dplayer';
+      document.getElementById('vPlayUrl').value = '正片$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+      document.getElementById('vodModalTitle').textContent = '新增影片档案';
+      openModal('vodModal');
+    }
+
+    async function saveVodForm() {
+      const id = parseInt(document.getElementById('vId').value || '0', 10);
+      const payload = {
+        vod_id: id > 0 ? id : undefined,
+        vod_name: document.getElementById('vName').value.trim(),
+        type_id: parseInt(document.getElementById('vTypeId').value, 10),
+        vod_pic: document.getElementById('vPic').value.trim(),
+        vod_remarks: document.getElementById('vRemarks').value.trim(),
+        vod_play_from: document.getElementById('vPlayFrom').value.trim(),
+        vod_play_url: document.getElementById('vPlayUrl').value.trim(),
+      };
+      const res = await fetch(`${API}/vod/save`, {
+        method: 'POST',
+        headers: authHeader(),
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json.code === 0) {
+        closeModal('vodModal');
+        loadVodTable(1);
+      } else {
+        alert(json.msg || '保存失败');
+      }
+    }
+
+    async function deleteVod(id) {
+      if (!confirm('确定删除该影片？')) return;
+      await fetch(`${API}/vod/${id}`, { method: 'DELETE', headers: authHeader() });
+      loadVodTable(1);
+    }
+
+    // 3. 分类体系
+    async function loadTypeTable() {
+      const res = await fetch(`${API}/type/list`, { headers: authHeader() });
+      const json = await res.json();
+      if (json.code === 0) {
+        globalTypes = json.data;
+        const tbody = document.getElementById('typeTbody');
+        tbody.innerHTML = '';
+        json.data.forEach(t => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${t.type_id}</td>
+            <td>${t.type_sort}</td>
+            <td><b>${t.type_pid > 0 ? '└ ' : ''}${t.type_name}</b></td>
+            <td><code>${t.type_en}</code></td>
+            <td>${t.type_pid === 0 ? '一级根分类' : '子分类 (ID: ' + t.type_pid + ')'}</td>
+            <td><span class="actor-tag">${t.type_status ? '已启用' : '已停用'}</span></td>
+            <td>
+              <button class="action-btn del" onclick="deleteType(${t.type_id})">删除</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        // 联动更新下拉框
+        const sel = document.getElementById('vTypeId');
+        sel.innerHTML = '';
+        globalTypes.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.type_id;
+          opt.textContent = `${t.type_pid > 0 ? '└ ' : ''}${t.type_name}`;
+          sel.appendChild(opt);
+        });
+      }
+    }
+
+    async function deleteType(id) {
+      if (!confirm('确定删除该分类？')) return;
+      await fetch(`${API}/type/${id}`, { method: 'DELETE', headers: authHeader() });
+      loadTypeTable();
+    }
+
+    // 4. 文章资讯管理
+    async function loadArtTable() {
+      const res = await fetch(`${API}/art/list`, { headers: authHeader() });
+      const json = await res.json();
+      if (json.code === 0) {
+        const tbody = document.getElementById('artTbody');
+        tbody.innerHTML = '';
+        json.data.list.forEach(a => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${a.art_id}</td>
+            <td><b>${a.art_name}</b></td>
+            <td>${a.art_author} / ${a.art_from}</td>
+            <td>${a.art_hits}</td>
+            <td>${a.art_time ? new Date(a.art_time * 1000).toLocaleDateString() : '-'}</td>
+            <td>
+              <button class="action-btn del" onclick="deleteArt(${a.art_id})">删除</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    async function deleteArt(id) {
+      if (!confirm('确定删除该文章？')) return;
+      await fetch(`${API}/art/${id}`, { method: 'DELETE', headers: authHeader() });
+      loadArtTable();
+    }
+
+    // 5. 影视专题管理
+    async function loadTopicTable() {
+      const res = await fetch(`${API}/topic/list`, { headers: authHeader() });
+      const json = await res.json();
+      if (json.code === 0) {
+        const tbody = document.getElementById('topicTbody');
+        tbody.innerHTML = '';
+        json.data.forEach(t => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${t.topic_id}</td>
+            <td><b>${t.topic_name}</b></td>
+            <td><code>${t.topic_rel_vod}</code></td>
+            <td>${t.topic_hits}</td>
+            <td>
+              <button class="action-btn del" onclick="deleteTopic(${t.topic_id})">删除</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    async function deleteTopic(id) {
+      if (!confirm('确定删除该专题？')) return;
+      await fetch(`${API}/topic/${id}`, { method: 'DELETE', headers: authHeader() });
+      loadTopicTable();
+    }
+
+    // 6. 采集管理
+    async function loadNodeTable() {
+      const res = await fetch(`${API}/collect/nodes`, { headers: authHeader() });
+      const json = await res.json();
+      if (json.code === 0) {
+        const tbody = document.getElementById('nodeTbody');
+        tbody.innerHTML = '';
+        json.data.forEach(n => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${n.id}</td>
+            <td><b>${n.name}</b></td>
+            <td><code style="font-size:0.75rem;">${n.api_url}</code></td>
+            <td><span class="actor-tag">${n.api_type.toUpperCase()}</span></td>
+            <td>${n.last_run_time ? new Date(n.last_run_time * 1000).toLocaleString() : '未运行'}</td>
+            <td>
+              <button class="action-btn" onclick="triggerSingleCollect(${n.id}, 24)">即时同步</button>
+              <button class="action-btn" onclick="openBindModal(${n.id})">分类映射</button>
+              <button class="action-btn del" onclick="deleteNode(${n.id})">删除</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    async function openBindModal(nodeId) {
+      curBindingNodeId = nodeId;
+      const wrap = document.getElementById('bindWrap');
+      wrap.innerHTML = '<div style="text-align:center;padding:2rem;">正在获取远程分类字典...</div>';
+      openModal('bindModal');
+
+      try {
+        const [rRes, bRes] = await Promise.all([
+          fetch(`${API}/collect/node/${nodeId}/remote-classes`, { headers: authHeader() }),
+          fetch(`${API}/collect/node/${nodeId}/binds`, { headers: authHeader() })
+        ]);
+        const rJson = await rRes.json();
+        const bJson = await bRes.json();
+
+        if (rJson.code !== 0) {
+          wrap.innerHTML = `<div style="color:#f87171;padding:1rem;">获取失败: ${rJson.msg}</div>`;
+          return;
+        }
+
+        const bindMap = new Map((bJson.data || []).map(b => [b.source_type_id, b.local_type_id]));
+        let html = '<table class="data-table"><thead><tr><th>上游资源分类</th><th>映射到本地分类</th></tr></thead><tbody>';
+        
+        rJson.data.forEach(remote => {
+          const curLocal = bindMap.get(remote.type_id) || 0;
+          let opts = '<option value="0">-- 忽略跳过 --</option>';
+          globalTypes.forEach(t => {
+            opts += `<option value="${t.type_id}" ${t.type_id === curLocal ? 'selected' : ''}>${t.type_pid > 0 ? '└ ' : ''}${t.type_name}</option>`;
+          });
+
+          html += `
+            <tr>
+              <td><b>${remote.type_name}</b> <small style="color:var(--text-muted);">(ID: ${remote.type_id})</small></td>
+              <td><select class="input-box bind-select" data-source-id="${remote.type_id}" data-source-name="${remote.type_name}">${opts}</select></td>
+            </tr>
+          `;
+        });
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+      } catch (err) {
+        wrap.innerHTML = `<div style="color:#f87171;padding:1rem;">异常: ${err.message}</div>`;
+      }
+    }
+
+    async function saveBinds() {
+      const selects = document.querySelectorAll('.bind-select');
+      const binds = [];
+      selects.forEach(s => {
+        const localId = parseInt(s.value, 10);
+        if (localId > 0) {
+          binds.push({
+            source_type_id: parseInt(s.dataset.sourceId, 10),
+            source_type_name: s.dataset.sourceName,
+            local_type_id: localId
+          });
+        }
+      });
+
+      const res = await fetch(`${API}/collect/node/${curBindingNodeId}/binds`, {
+        method: 'POST',
+        headers: authHeader(),
+        body: JSON.stringify({ binds })
+      });
+      const json = await res.json();
+      if (json.code === 0) {
+        alert('分类绑定保存成功！');
+        closeModal('bindModal');
+      } else {
+        alert(json.msg || '保存失败');
+      }
+    }
+
+    async function triggerSingleCollect(nodeId, hours = 24) {
+      const log = document.getElementById('collectLogOutput');
+      log.textContent = `[${new Date().toLocaleTimeString()}] 正在启动节点 (ID: ${nodeId}) 采集同步...`;
+      try {
+        const res = await fetch(`${API}/collect/run`, {
+          method: 'POST',
+          headers: authHeader(),
+          body: JSON.stringify({ node_id: nodeId, hours })
+        });
+        const json = await res.json();
+        log.textContent = `[${new Date().toLocaleTimeString()}] 同步报告：\n` + JSON.stringify(json.data, null, 2);
+        loadNodeTable();
+      } catch (err) {
+        log.textContent = `执行失败: ${err.message}`;
+      }
+    }
+
+    async function triggerCollect(hours = 24) {
+      const log = document.getElementById('collectLogOutput');
+      log.textContent = `[${new Date().toLocaleTimeString()}] 正在向全站 Timming 调度端点发送广播...`;
+      try {
+        const res = await fetch(`/api.php/timming/index?h=${hours}`);
+        const json = await res.json();
+        log.textContent = `[${new Date().toLocaleTimeString()}] 调度完成：\n` + JSON.stringify(json.data, null, 2);
+        loadOverviewStats();
+      } catch (err) {
+        log.textContent = `异常: ${err.message}`;
+      }
+    }
+
+    // 7. 播放器配置
+    async function loadPlayerTable() {
+      const res = await fetch(`${API}/player/list`, { headers: authHeader() });
+      const json = await res.json();
+      if (json.code === 0) {
+        const tbody = document.getElementById('playerTbody');
+        tbody.innerHTML = '';
+        json.data.forEach(p => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${p.id}</td>
+            <td>${p.sort}</td>
+            <td><code>${p.code}</code></td>
+            <td><b>${p.name}</b></td>
+            <td><small>${p.parse_url || '原生直连切片'}</small></td>
+            <td><span class="actor-tag">${p.status ? '已启用' : '禁用'}</span></td>
+            <td><button class="action-btn del" onclick="deletePlayer(${p.id})">删除</button></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    async function deletePlayer(id) {
+      if (!confirm('确定删除该播放器？')) return;
+      await fetch(`${API}/player/${id}`, { method: 'DELETE', headers: authHeader() });
+      loadPlayerTable();
+    }
+
+    // 8. 影评管理
+    async function loadCommentTable() {
+      const res = await fetch(`${API}/comment/list`, { headers: authHeader() });
+      const json = await res.json();
+      if (json.code === 0) {
+        const tbody = document.getElementById('commentTbody');
+        tbody.innerHTML = '';
+        json.data.forEach(c => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${c.comment_id}</td>
+            <td><b>${c.vod_name || 'ID: ' + c.comment_rid}</b></td>
+            <td>${c.comment_name}</td>
+            <td>${c.comment_content}</td>
+            <td>${c.comment_time ? new Date(c.comment_time * 1000).toLocaleString() : '-'}</td>
+            <td><button class="action-btn del" onclick="deleteComment(${c.comment_id})">删除</button></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    async function deleteComment(id) {
+      if (!confirm('确定删除该影评？')) return;
+      await fetch(`${API}/comment/${id}`, { method: 'DELETE', headers: authHeader() });
+      loadCommentTable();
+    }
+
+    // 9. 友情链接
+    async function loadLinkTable() {
+      const res = await fetch(`${API}/link/list`, { headers: authHeader() });
+      const json = await res.json();
+      if (json.code === 0) {
+        const tbody = document.getElementById('linkTbody');
+        tbody.innerHTML = '';
+        json.data.forEach(l => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${l.link_id}</td>
+            <td><b>${l.link_name}</b></td>
+            <td><a href="${l.link_url}" target="_blank" style="color:#38bdf8;">${l.link_url}</a></td>
+            <td>${l.link_sort}</td>
+            <td><button class="action-btn del" onclick="deleteLink(${l.link_id})">删除</button></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    async function deleteLink(id) {
+      if (!confirm('确定删除该链接？')) return;
+      await fetch(`${API}/link/${id}`, { method: 'DELETE', headers: authHeader() });
+      loadLinkTable();
+    }
+
+    // 10. 系统全局设置
+    async function loadConfigView() {
+      const res = await fetch(`${API}/config`, { headers: authHeader() });
+      const json = await res.json();
+      if (json.code === 0 && json.data) {
+        document.getElementById('sysSiteName').value = json.data.site_name || '';
+        document.getElementById('sysSiteUrl').value = json.data.site_url || '';
+        document.getElementById('sysKeywords').value = json.data.site_keywords || '';
+      }
+    }
+
+    async function saveSystemConfig() {
+      const payload = {
+        site_name: document.getElementById('sysSiteName').value.trim(),
+        site_url: document.getElementById('sysSiteUrl').value.trim(),
+        site_keywords: document.getElementById('sysKeywords').value.trim(),
+        new_password: document.getElementById('sysNewPwd').value.trim()
+      };
+      const res = await fetch(`${API}/config`, {
+        method: 'POST',
+        headers: authHeader(),
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json.code === 0) {
+        alert('系统全局配置已成功保存！');
+        document.getElementById('sysNewPwd').value = '';
+      } else {
+        alert(json.msg || '保存失败');
+      }
+    }
+
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+    async function initConsole() {
+      const user = localStorage.getItem('maccms_admin_user') || 'admin';
+      document.getElementById('lblAdminUser').textContent = user;
+      await loadTypeTable();
+      loadOverviewStats();
+    }
+
+    if (token) {
+      document.getElementById('loginWrap').style.display = 'none';
+      document.getElementById('adminContainer').style.display = 'flex';
+      initConsole();
+    }
+  </script>
+</body>
+</html>

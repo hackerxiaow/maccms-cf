@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>正在播放 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
+</head>
+<body>
+
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="conch-ctwrap-auto">
+    <div class="container hl-paly-players">
+      <div class="hl-row-box hl-ma0 clearfix">
+        <!-- 播放器主栏 -->
+        <div class="hl-col-xs-12 hl-col-md-70w hl-col-lg-9">
+          <div class="hl-player-wrap embed-responsive embed-responsive-16by9 clearfix" id="playerWrap">
+            <!-- 播放提醒 -->
+            <div class="hl-player-notice hl-this-box hl-text-white" id="playerNotice">
+              <a class="hl-close-this" href="javascript:;"><i class="iconfont hl-icon-cuo"></i></a>
+              <span><strong><i class="hl-text-conch">提醒：</i></strong>不要轻易相信视频中的广告，谨防上当受骗！如果无法播放请刷新页面或切换线路。</span>
+            </div>
+
+            <!-- 播放器 -->
+            <div id="dplayer" style="width:100%;height:100%;"></div>
+
+            <!-- 播放器滑出操作面板 -->
+            <div class="hl-player-setups hl-text-white hl-tran5" id="playerSetups">
+              <div class="hl-setups-wrap">
+                <a href="javascript:;" id="btnRefresh"><i class="iconfont hl-icon-shuaxin"></i><span>刷新</span></a>
+                <a href="javascript:;" id="btnPrev"><i class="iconfont hl-icon-shangyiji"></i><span>上一集</span></a>
+                <a href="javascript:;" id="btnNext"><i class="iconfont hl-icon-xiayiji"></i><span>下一集</span></a>
+                <a href="javascript:;" id="btnTheater"><i class="iconfont hl-icon-shipin"></i><span>剧场</span></a>
+                <a href="javascript:;" id="btnLights"><i class="iconfont hl-icon-mingxing"></i><span>关灯</span></a>
+              </div>
+              <div class="hl-setups-op"><a href="javascript:;" id="btnSetups"><i class="iconfont hl-icon-jiantouzuo"></i></a></div>
+            </div>
+          </div>
+
+          <!-- 影片信息 -->
+          <div class="hl-playinfo-wrap" id="playInfo">
+            <div class="hl-vod-infos clearfix">
+              <div class="hl-infos-head clearfix">
+                <h2><span class="hl-infos-title" id="nowTitle">正在载入…</span></h2>
+              </div>
+              <div class="hl-infos-content clearfix">
+                <div class="hl-tag-item clearfix" id="nowTags"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 评论 (module/comment.html) -->
+          <div class="hl-row-box hl-rb-comm clearfix" id="pinglun">
+            <div class="hl-rb-head clearfix">
+              <h3 class="hl-rb-title">边看边评</h3>
+              <span class="hl-rb-more hl-text-muted">共&nbsp;<em class="hl-text-conch hl-total" id="cmtCount">0</em>&nbsp;条评论</span>
+            </div>
+            <div class="hl-comm-form">
+              <div class="hl-comm-write">
+                <input class="hl-comm-content" type="text" id="cmtName" placeholder="您的昵称（选填）" maxlength="20">
+              </div>
+              <div class="hl-comm-write hl-comm-start" style="margin-top:10px;">
+                <textarea class="hl-comm-content" id="cmtText" placeholder="说说你对这一集的看法…"></textarea>
+              </div>
+              <div class="hl-comm-handle" style="margin-top:10px;">
+                <button class="hl-comm-submit" onclick="submitComment()">发表评论</button>
+              </div>
+            </div>
+            <div class="hl-comm-list" id="cmtList"></div>
+          </div>
+        </div>
+
+      <!-- 侧栏播放列表 -->
+      <div class="hl-col-xs-12 hl-col-md-30w hl-col-lg-3">
+        <div class="hl-play-scrollbar">
+          <div class="hl-row-box hl-rb-playlist hl-tabs-item clearfix" id="playlistBox" style="padding:0;">
+            <div class="hl-rb-head clearfix">
+              <h3 class="hl-rb-title">播放列表</h3>
+            </div>
+            <div class="hl-play-source">
+              <div class="hl-plays-wrap hl-tabs-swiper">
+                <div class="hl-plays-from hl-tabs" id="sourceTabs"></div>
+              </div>
+              <div id="sourceBoxes"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+var params = new URLSearchParams(location.search);
+var vodId = parseInt(params.get('id') || '0', 10);
+var sid = parseInt(params.get('sid') || '0', 10);
+var nid = parseInt(params.get('nid') || '0', 10);
+var vod = null, dp = null, playerCfg = {};
+
+$(function () {
+  Theme.init().then(function () { Layout.render('play');
+    loadPlayers();
+    loadVod();
+  });
+});
+
+function doSearch(kw) {
+  kw = (kw || '').trim();
+  if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
+}
+
+function loadPlayers() {
+  API.get('/api/players').then(function (j) {
+    if (j.code === 0) j.data.forEach(function (p) { playerCfg[p.code.toLowerCase()] = p.parse_url; });
+  });
+}
+
+function loadVod() {
+  if (!vodId) { location.href = '/'; return; }
+  API.get('/api/vod/detail/' + vodId).then(function (j) {
+    if (j.code !== 0 || !j.data) { alert('影片不存在或已下架'); location.href = '/'; return; }
+    vod = j.data;
+    document.title = '正在播放：' + vod.vod_name + ' - MacCMS 影视';
+    renderInfo();
+    renderSources();
+    playEpisode();
+    loadComments();
+  });
+}
+
+function renderInfo() {
+  var epName = '';
+  var g = (vod.play_groups || [])[sid];
+  if (g && g.urls && g.urls[nid]) epName = g.urls[nid].name;
+  $('#nowTitle').html(U.esc(vod.vod_name) +
+    (epName ? ' <em style="font-style:normal;font-size:.95rem;color:var(--tx-mute,#888)">&nbsp;' + U.esc(epName) + '</em>' : ''));
+
+  var parts = [];
+  var dbl = parseFloat(vod.vod_douban_score || 0);
+  var tags = '';
+  if (dbl > 0) tags += '<span class="hl-douban-score"><em class="db">豆</em><em class="score">' + dbl.toFixed(1) + '</em></span>';
+  tags += '<a class="hl-text-conch" href="javascript:;">' + U.esc(vod.vod_remarks || '已完结') + '</a>';
+  if (vod.vod_year) parts.push(U.esc(vod.vod_year));
+  if (vod.vod_area) parts.push(U.esc(vod.vod_area));
+  if (vod.vod_class) parts.push(U.esc(vod.vod_class));
+  tags += parts.map(function (p) { return '<i>/</i><span>' + p + '</span>'; }).join('');
+  $('#nowTags').html(tags);
+}
+
+function renderSources() {
+  var groups = vod.play_groups || [];
+  if (!groups.length) { $('#playlistBox').html('<div class="hl-empty">暂无可播放资源</div>'); return; }
+  if (sid >= groups.length) sid = 0;
+
+  var tabs = $('#sourceTabs');
+  var boxes = $('#sourceBoxes');
+
+  groups.forEach(function (g, gi) {
+    var btn = $('<a class="hl-tabs-btn' + (gi === sid ? ' active' : '') + '"><i class="iconfont hl-icon-shipin"></i>&nbsp;' + U.esc(g.from.toUpperCase()) + '</a>');
+    btn.data('gi', gi);
+    tabs.append(btn);
+
+    var box = $('<div class="hl-tabs-box hl-fadeIn" style="display:' + (gi === sid ? 'block' : 'none') + ';">');
+    var ul = $('<ul class="hl-plays-list hl-sort-list' + (g.urls.length > 8 ? ' hl-list-hide-xs' : '') + ' clearfix">');
+    g.urls.forEach(function (ep, ei) {
+      var cls = (gi === sid && ei === nid) ? ' class="hl-text-conch active"' : '';
+      var active = (gi === sid && ei === nid) ? '<em class="hl-play-active hl-bg-conch"></em>' : '';
+      ul.append('<li class="hl-col-xs-4 hl-col-sm-2"><a href="javascript:;" data-sid="' + gi + '" data-nid="' + ei + '"' + cls + '>' + active + U.esc(ep.name) + '</a></li>');
+    });
+    if (g.urls.length > 8) {
+      ul.append('<div class="hl-show-div hl-col-xs-4 hl-col-sm-2"><a href="javascript:;" class="hl-show-list"><i class="iconfont hl-icon-jiantoushang"></i><em>展开全部</em></a></div>');
+    }
+    box.append(ul);
+    boxes.append(box);
+  });
+
+  tabs.on('click', '.hl-tabs-btn', function () {
+    var gi = $(this).data('gi');
+    tabs.find('.hl-tabs-btn').removeClass('active');
+    $(this).addClass('active');
+    boxes.find('.hl-tabs-box').hide().eq(gi).show();
+    sid = gi; nid = 0;
+    renderSources();
+    playEpisode();
+  });
+
+  boxes.on('click', '.hl-plays-list a[data-nid]', function () {
+    nid = parseInt($(this).data('nid'), 10);
+    renderSources();
+    playEpisode();
+  });
+
+  Interact.bindShowAll($('#playlistBox')[0]);
+}
+
+function playEpisode() {
+  var group = vod.play_groups[sid];
+  if (!group || !group.urls[nid]) return;
+  var ep = group.urls[nid];
+  var from = (ep.from || group.from || 'dplayer').toLowerCase();
+  var parse = playerCfg[from] || '';
+
+  history.replaceState(null, '', '/play.html?id=' + vodId + '&sid=' + sid + '&nid=' + nid);
+  $('#nowTitle').html(U.esc(vod.vod_name) + ' <em style="font-style:normal;font-size:.95rem;color:var(--tx-mute,#888)">' + U.esc(ep.name) + '</em>');
+
+  var saved = Interact.history.progress(vodId, sid, nid);
+
+  destroyPlayer();
+
+  var isHls = ep.url.indexOf('.m3u8') >= 0 || from.indexOf('m3u8') >= 0 || from === 'dplayer';
+  var isMp4 = ep.url.indexOf('.mp4') >= 0;
+
+  if ((parse && !isHls && !isMp4) || from === 'iframe') {
+    $('#dplayer').html('<iframe src="' + (parse ? parse + encodeURIComponent(ep.url) : ep.url) + '" width="100%" height="100%" frameborder="0" allowfullscreen="true" webkitallowfullscreen="true" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation" style="border:none;background:#000;"></iframe>');
+    return;
+  }
+
+  if (typeof DPlayer === 'undefined') {
+    $('#dplayer').html('<video src="' + ep.url + '" controls autoplay style="width:100%;height:100%;background:#000;"></video>');
+    return;
+  }
+
+  dp = new DPlayer({
+    container: document.getElementById('dplayer'),
+    autoplay: true,
+    theme: '#0099ff',
+    lang: 'zh-cn',
+    screenshot: true,
+    hotkey: true,
+    preload: 'auto',
+    volume: 0.8,
+    video: { url: ep.url, type: isHls ? 'hls' : 'auto' }
+  });
+
+  if (saved > 5) {
+    setTimeout(function () {
+      try { dp.seek(saved); } catch (e) {}
+    }, 1200);
+  }
+
+  dp.on('timeupdate', function () {
+    Interact.history.save({
+      vod_id: vodId, vod_name: vod.vod_name, vod_pic: vod.vod_pic,
+      sid: sid, nid: nid, ep_name: ep.name,
+      time: Math.floor(dp.video.currentTime), duration: Math.floor(dp.video.duration || 0)
+    });
+  });
+
+  dp.on('ended', function () { playNext(); });
+}
+
+function destroyPlayer() {
+  if (dp) { try { dp.destroy(); } catch (e) {} dp = null; }
+  $('#dplayer').html('');
+}
+
+function playNext() {
+  var g = vod.play_groups[sid];
+  if (g && nid < g.urls.length - 1) { nid++; renderSources(); playEpisode(); }
+  else alert('已经是最后一集了');
+}
+function playPrev() {
+  if (nid > 0) { nid--; renderSources(); playEpisode(); }
+  else alert('已经是第一集了');
+}
+
+$('#btnNext').on('click', playNext);
+$('#btnPrev').on('click', playPrev);
+$('#btnRefresh').on('click', function () { playEpisode(); });
+$('#btnSetups').on('click', function () { $('#playerSetups').toggleClass('active'); });
+$('.hl-close-this').on('click', function () { $('#playerNotice').hide(); });
+$('#btnTheater').on('click', function () {
+  document.body.classList.toggle('theater-mode');
+  if (document.body.classList.contains('theater-mode')) {
+    $('#playerWrap').css({ height: 'calc(100vh - 40px)' });
+    $('#conch-header').fadeOut();
+  } else {
+    $('#playerWrap').css({ height: '' });
+    $('#conch-header').fadeIn();
+  }
+});
+$('#btnLights').on('click', function () {
+  document.body.classList.toggle('lights-off');
+});
+
+function loadComments() {
+  API.get('/api/comment/list', { mid: 1, rid: vodId }).then(function (j) {
+    var list = (j.code === 0 && j.data) ? j.data : [];
+    var box = $('#cmtList');
+    if (!list.length) { box.html('<div class="hl-empty">还没有评论，来说两句</div>'); return; }
+    box.html('');
+    list.forEach(function (c) {
+      box.append(
+        '<div class="hl-comm-item"><div class="hl-comm-avatar">' + U.esc((c.comment_name || '影').charAt(0)) + '</div>' +
+        '<div style="flex:1;min-width:0"><div class="hl-comm-head"><span class="hl-comm-name">' + U.esc(c.comment_name) + '</span>' +
+        '<span class="hl-comm-time">' + (c.comment_time ? new Date(c.comment_time * 1000).toLocaleString() : '') + '</span></div>' +
+        '<div class="hl-comm-text">' + U.esc(c.comment_content) + '</div></div></div>'
+      );
+    });
+  });
+}
+
+function submitComment() {
+  var name = $('#cmtName').val().trim();
+  var content = $('#cmtText').val().trim();
+  if (!content) { alert('请输入评论内容'); return; }
+  API.post('/api/comment/add', { mid: 1, rid: vodId, name: name, content: content }).then(function (j) {
+    if (j.code === 0) { $('#cmtText').val(''); loadComments(); }
+    else alert(j.msg || '发表失败');
+  });
+}
+</script>
+</body>
+</html>

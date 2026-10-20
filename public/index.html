@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MacCMS 影视 - 海螺影视主题 Serverless 版</title>
+  <meta name="keywords" content="苹果CMS,MacCMS,海螺影视,高清影视,电影,电视剧,D1">
+  <meta name="description" content="基于 Cloudflare Worker + Pages + D1 构建的海螺影视主题 Serverless 版">
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="apple-touch-icon" href="/static/theme/img/ios_fav.png">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+
+<!-- 顶部导航 (public/head.html) -->
+<div id="conch-header" class="conch-header">
+  <div class="conch-headwrap">
+    <div class="container">
+      <div class="conch-logo">
+        <a class="hl-logo hl-logo-black" href="/" style="background-image: url(/static/theme/img/logo_black.png);"></a>
+        <a class="hl-logo hl-logo-white" href="/" style="background-image: url(/static/theme/img/logo_white.png);"></a>
+      </div>
+
+      <div class="conch-list conch-content">
+        <ul class="hl-list hl-text-muted clearfix">
+          <li class="hl-list-font hl-hidden-xs"><a href="javascript:;" title="观看记录"><i class="iconfont hl-icon-shijian"></i></a></li>
+          <li class="hl-list-font hl-hidden-xs"><a href="/type.html?by=time" title="最新"><i class="iconfont hl-icon-zuixin"></i></a></li>
+          <li class="hl-list-font hl-hidden-xs"><a href="/rank.html" title="排行"><i class="iconfont hl-icon-paihang"></i></a></li>
+          <li class="hl-list-font hl-hidden-xs"><a href="/admin/index.html" title="后台管理"><i class="iconfont hl-icon-shezhi"></i></a></li>
+        </ul>
+      </div>
+
+      <div class="conch-search">
+        <div class="hl-search-form">
+          <input type="text" id="searchInput" class="hl-search-text hl-search-wd" placeholder="请输入片名、演员或导演" autocomplete="off">
+          <button class="hl-search-submit" type="button" id="btnSearch"><i class="iconfont hl-icon-sousuo"></i></button>
+        </div>
+        <div class="hl-sh-box" id="suggestBox"></div>
+      </div>
+
+      <div class="conch-nav">
+        <div class="hl-nav-wrap hl-navswiper">
+          <ul class="hl-nav hl-text-site swiper-wrapper clearfix" id="mainNav"></ul>
+        </div>
+        <div class="hl-nav-more">
+          <i class="hl-mbg hl-hide-sm"></i>
+          <a class="hl-text-site hl-open-menu" href="javascript:;" id="btnOpenMenu"><span class="hl-hidden-xs">全部</span><i class="iconfont hl-icon-caidan"></i></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全部分类抽屉菜单 (public/menus.html) -->
+  <div class="conch-menus hl-bg-site hl-tran5" id="conchMenus">
+    <div class="conch-ms-header">
+      <div class="conch-logo">
+        <a class="hl-logo hl-logo-black" href="/" style="background-image: url(/static/theme/img/logo_black.png);"></a>
+        <a class="hl-logo hl-logo-white" href="/" style="background-image: url(/static/theme/img/logo_white.png);"></a>
+      </div>
+      <a class="conch-ms-close hl-text-muted" href="javascript:;" id="btnCloseMenu"><i class="iconfont hl-icon-cuo"></i></a>
+    </div>
+    <div class="conch-scrollbar">
+      <ul class="hl-menus clearfix" id="drawerMenuList"></ul>
+    </div>
+  </div>
+  <div class="conch-ms-overlay" id="menuOverlay"></div>
+</div>
+
+<!-- 焦点图轮播 (module/banner.html) -->
+<div id="conch-banner" class="conch-banner">
+  <div class="conch-brwrap">
+    <div class="container">
+      <div class="conch-br-box hl-hidden">
+        <div class="conch-br-swiper">
+          <ul class="hl-br-list swiper-wrapper clearfix" id="bannerList"></ul>
+          <div class="swiper-pagination" id="bannerPager"></div>
+          <div class="hl-br-arrow hl-hidden-xs">
+            <a class="hl-text-white swiper-button-prev" href="javascript:;"><i class="iconfont hl-icon-jiantouzuo"></i></a>
+            <a class="hl-text-white swiper-button-next" href="javascript:;"><i class="iconfont hl-icon-jiantouyou"></i></a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 主体内容 (原版结构：#conch-content > .conch-ctwrap > 各 .container) -->
+<div id="conch-content" class="conch-content">
+  <div class="conch-ctwrap">
+
+    <!-- 快捷导航 + 公告 (module/nanos.html) -->
+    <div class="container hl-home-nano" id="nanoModule">
+      <div class="hl-row-nano">
+        <div class="row">
+          <div class="hl-smnav-box hl-smnav-home hl-col-md-8 hl-col-xs-12" id="nanoBox">
+            <ul class="hl-smnav clearfix" id="nanoList"></ul>
+          </div>
+          <div class="hl-notice-box hl-col-md-4 hl-col-xs-12" id="noticeBox">
+            <div class="hl-notice-item">
+              <marquee scrollamount="4" behavior="scroll" onmouseover="this.stop()" onmouseout="this.start()">
+                <i class="iconfont hl-icon-tongzhi hl-text-conch"></i>&nbsp;<span id="noticeText"></span>
+              </marquee>
+              <div class="hl-nb-right-s"><i class="hl-mbg"></i></div>
+              <div class="hl-nb-left-s"><i class="hl-mbg"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 热播推荐 (module/hots.html) -->
+    <div class="container" id="hotsModule">
+      <div class="hl-row-box">
+        <div class="hl-rb-vod clearfix">
+          <div class="hl-rb-head clearfix">
+            <h2 class="hl-rb-title"><i class="iconfont hl-icon-huo"></i><span id="hotsTitle">热播推荐</span></h2>
+            <a class="hl-rb-more hl-text-muted" href="/rank.html">最近更新<em class="hl-text-conch" id="todayCount">0</em><i class="iconfont hl-icon-jiantouyou"></i></a>
+          </div>
+          <div class="row">
+            <div class="hl-list-wrap hl-list-v6">
+              <ul class="hl-vod-list clearfix" id="hotsList"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 每周更新 (module/weeks.html - MacCMS 10 核心模块) -->
+    <div class="container" id="weeksModule">
+      <div class="hl-row-box">
+        <div class="hl-rb-vod hl-week-item hl-tabs-item clearfix">
+          <div class="hl-rb-head clearfix">
+            <h2 class="hl-rb-title"><i class="iconfont hl-icon-rili"></i>每周更新</h2>
+            <a class="hl-rb-more hl-text-muted" href="/type.html?by=time">更多<i class="iconfont hl-icon-jiantouyou"></i></a>
+            <span class="hl-rb-type-child hl-tabs" id="weekTabs">
+              <a class="hl-tabs-btn hl-bg-subs hl-bg-hover" href="javascript:;" data-day="1">周一</a>
+              <a class="hl-tabs-btn hl-bg-subs hl-bg-hover" href="javascript:;" data-day="2">周二</a>
+              <a class="hl-tabs-btn hl-bg-subs hl-bg-hover" href="javascript:;" data-day="3">周三</a>
+              <a class="hl-tabs-btn hl-bg-subs hl-bg-hover" href="javascript:;" data-day="4">周四</a>
+              <a class="hl-tabs-btn hl-bg-subs hl-bg-hover" href="javascript:;" data-day="5">周五</a>
+              <a class="hl-tabs-btn hl-bg-subs hl-bg-hover" href="javascript:;" data-day="6">周六</a>
+              <a class="hl-tabs-btn hl-bg-subs hl-bg-hover" href="javascript:;" data-day="0">周日</a>
+            </span>
+          </div>
+          <div class="row">
+            <div class="hl-list-wrap hl-list-v6">
+              <ul class="hl-vod-list clearfix" id="weekList"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 各分类影视区块 (module/vods.html，有排行榜时带原版右侧绝对定位 hl-vod-rank) -->
+    <div id="vodSections"></div>
+
+    <!-- 精彩专题 (module/topics.html) -->
+    <div class="container" id="topicsModule">
+      <div class="hl-row-box">
+        <div class="hl-rb-topic clearfix">
+          <div class="hl-rb-head clearfix">
+            <h2 class="hl-rb-title"><i class="iconfont hl-icon-zhuanti"></i><span id="topicTitle">精彩专题</span></h2>
+            <a class="hl-rb-more hl-text-muted" href="/topic.html">更多<i class="iconfont hl-icon-jiantouyou"></i></a>
+          </div>
+          <div class="row">
+            <div class="hl-list-wrap hl-list-v4">
+              <ul class="hl-topic-list hl-wide-list clearfix" id="topicList"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新闻头条 / 资讯 (module/arts.html) -->
+    <div class="container" id="artsModule">
+      <div class="hl-row-box">
+        <div class="hl-rb-art clearfix">
+          <div class="hl-rb-head clearfix">
+            <h2 class="hl-rb-title"><a href="/art.html"><i class="iconfont hl-icon-xinwen"></i><span id="artTitle">新闻头条</span></a></h2>
+            <a class="hl-rb-more hl-text-muted" href="/art.html">更多<i class="iconfont hl-icon-jiantouyou"></i></a>
+          </div>
+          <div class="row">
+            <div class="hl-list-wrap hl-list-grid hl-list-v6">
+              <ul class="hl-art-list clearfix" id="artList"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 友情链接 (module/links.html) -->
+    <div class="container" id="linksModule">
+      <div class="hl-row-box">
+        <div class="hl-rb-links clearfix">
+          <div class="hl-rb-head clearfix">
+            <h2 class="hl-rb-title"><i class="iconfont hl-icon-lianjie"></i><span id="linksTitle">友情链接</span></h2>
+          </div>
+          <div class="row">
+            <ul class="hl-footer-list clearfix hl-bg-site" id="linkList"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 页脚 (public/foot.html) -->
+<div id="conch-footer" class="conch-footer">
+  <div class="conch-footwrap hl-bg-subs hl-footnav-show">
+    <div class="container">
+      <div class="hl-footwrap-item">
+        <div class="hl-foot-extra">
+          <ul class="hl-fe-list clearfix">
+            <li class="hl-color-item">
+              <a href="javascript:;" id="skinToggle"><i class="iconfont hl-icon-yueliang"></i><span id="skinText">深色模式</span></a>
+            </li>
+            <li class="hl-back-item">
+              <a class="hl-back-top" href="javascript:window.scrollTo({top:0,behavior:'smooth'});"><i class="iconfont hl-icon-jiantoushang"></i><span>返回顶部</span></a>
+            </li>
+          </ul>
+        </div>
+
+        <div class="row">
+          <div class="hl-col-sm-8 hl-col-xs-12">
+            <div class="hl-foot-text hl-text-muted">
+              <p id="footDesc">基于 Cloudflare Workers + Pages + D1 边缘云原生架构构建 · 完全兼容 MacCMS 8/10 协议</p>
+              <p>本站只提供影视试看服务，所有内容均来自互联网采集，版权归原作者所有。</p>
+            </div>
+            <div class="hl-map-nav hl-text-site hl-hidden-xs">
+              <a href="/api.php/provide/vod/?ac=list" target="_blank">资源开放接口</a>
+              <span>—</span>
+              <a href="/api.php/provide/art/?ac=list" target="_blank">资讯提供接口</a>
+              <span>—</span>
+              <a href="/api.php/timming/index" target="_blank">定时采集调度</a>
+              <span>—</span>
+              <a href="/admin/index.html">管理后台</a>
+            </div>
+          </div>
+          <div class="hl-col-sm-4 hl-col-xs-12">
+            <div class="hl-foot-logo">
+              <a class="hl-logo hl-bright-0" href="/" style="background-image: url(/static/theme/img/logo_black.png);"></a>
+            </div>
+            <div class="hl-foot-copy hl-text-muted">
+              <p>&copy;&nbsp;2026&nbsp;MacCMS Serverless Edition · 海螺影视 Conch_M003</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/js/swiper.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script>
+var allTypes = [];
+
+$(function () {
+  Theme.init()
+    .then(function () { return loadTypes(); })
+    .then(function () {
+      renderNav();
+      renderDrawer();
+      renderBanner();
+      renderNano();
+      renderHots();
+      renderWeeks();
+      renderVodSections();
+      renderTopics();
+      renderArts();
+      renderLinks();
+      bindSearch();
+      bindMenu();
+      initSwipers();
+    });
+});
+
+function loadTypes() {
+  return API.get('/api/types').then(function (j) {
+    allTypes = (j.code === 0 && j.data) ? j.data : [];
+    return allTypes;
+  }).catch(function () {
+    allTypes = [];
+    return allTypes;
+  });
+}
+
+function renderNav() {
+  var nav = $('#mainNav');
+  nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/" class="hl-text-conch active">首页</a></li>');
+  var typeIds = (Theme.get('nav.type.PC', '1,2,3,4,5') || '').split(',').map(Number);
+  allTypes.forEach(function (t) {
+    if (typeIds.indexOf(t.type_id) >= 0) {
+      nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/type.html?id=' + t.type_id + '">' + U.esc(t.type_name) + '</a></li>');
+    }
+  });
+  nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/topic.html">专题</a></li>');
+  nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/art.html">资讯</a></li>');
+  nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/type.html?by=time">最新</a></li>');
+  nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/rank.html">排行</a></li>');
+}
+
+function renderDrawer() {
+  var ul = $('#drawerMenuList');
+  ul.append('<li class="hl-menus-item"><a href="/" class="active"><i class="iconfont hl-icon-shouye"></i><span>首页</span></a></li>');
+  allTypes.forEach(function (t) {
+    ul.append('<li class="hl-menus-item"><a href="/type.html?id=' + t.type_id + '"><i class="iconfont hl-icon-dianshiju3"></i><span>' + U.esc(t.type_name) + '</span></a></li>');
+  });
+  ul.append('<li class="hl-menus-item"><a href="/topic.html"><i class="iconfont hl-icon-zhuanti"></i><span>专题</span></a></li>');
+  ul.append('<li class="hl-menus-item"><a href="/art.html"><i class="iconfont hl-icon-xinwen"></i><span>资讯</span></a></li>');
+  ul.append('<li class="hl-menus-item"><a href="/rank.html"><i class="iconfont hl-icon-paihang"></i><span>排行</span></a></li>');
+  ul.append('<li class="hl-menus-item"><a href="/admin/index.html"><i class="iconfont hl-icon-shezhi"></i><span>管理后台</span></a></li>');
+}
+
+function bindMenu() {
+  $('#btnOpenMenu').on('click', function () {
+    $('#conchMenus').addClass('active');
+    $('#menuOverlay').addClass('active');
+  });
+  $('#btnCloseMenu, #menuOverlay').on('click', function () {
+    $('#conchMenus').removeClass('active');
+    $('#menuOverlay').removeClass('active');
+  });
+}
+
+function renderBanner() {
+  if (!Theme.on('home.banner.btn', true)) { $('#conch-banner').hide(); return; }
+  var num = Theme.num('home.banner.num1', 9);
+  API.get('/api/vod/banners', { limit: num }).then(function (j) {
+    if (j.code !== 0 || !j.data.length) { $('#conch-banner').hide(); return; }
+    var list = $('#bannerList');
+    j.data.forEach(function (v) {
+      var ph = U.placeholder(v.vod_name, U.hash(v.vod_name));
+      var img = v.vod_pic_slide || v.vod_pic || ph;
+      list.append(
+        '<li class="hl-br-item swiper-slide">' +
+        '<a class="hl-br-thumb hl-lazy" href="/detail.html?id=' + v.vod_id + '" title="' + U.esc(v.vod_name) + '" data-original="' + U.esc(img) + '">' +
+        '<div class="hl-br-text hl-text-white">' +
+        '<div class="hl-br-type">' + U.esc(v.type_name || '推荐') + '</div>' +
+        '<div class="hl-br-title hl-lc-1">' + U.esc(v.vod_name) + '</div>' +
+        '<div class="hl-br-sub hl-lc-1">[' + U.esc(v.vod_remarks || '热门推荐') + ']&nbsp;' + U.esc(v.vod_sub || v.vod_actor || '') + '</div>' +
+        '</div></a></li>'
+      );
+    });
+    Interact.lazy($('#bannerList')[0]);
+    initSwipers();
+  });
+}
+
+function renderNano() {
+  if (!Theme.on('home.meun.btn', true)) $('#nanoBox').hide();
+  if (!Theme.on('home.notice.btn', true)) $('#noticeBox').hide();
+  var nano = $('#nanoList');
+  allTypes.slice(0, 10).forEach(function (t) {
+    nano.append('<li class="hl-smnav-item"><a class="hl-bg-subs" href="/type.html?id=' + t.type_id + '"><i class="iconfont hl-icon-dianshiju3"></i><span>' + U.esc(t.type_name) + '</span></a></li>');
+  });
+  $('#noticeText').text(Theme.get('home.notice.text', '欢迎使用 MacCMS 影视 Serverless 版，基于 Cloudflare 边缘云原生架构构建。'));
+}
+
+function renderHots() {
+  if (!Theme.on('home.hots.btn', true)) { $('#hotsModule').hide(); return; }
+  $('#hotsTitle').text(Theme.get('home.hots.title', '热播推荐'));
+  var num = 12; // 2 行标准 6 宫格 = 12 张卡片
+  API.get('/api/vod/list', { limit: num, by: 'hits' }).then(function (j) {
+    if (j.code !== 0) return;
+    $('#todayCount').text(j.data.total);
+    var list = $('#hotsList');
+    j.data.list.forEach(function (v) {
+      list.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+    });
+    Interact.lazy(list[0]);
+  });
+}
+
+function renderWeeks() {
+  var today = new Date().getDay(); // 0=周日
+  $('#weekTabs a').each(function () {
+    if (parseInt($(this).data('day'), 10) === today) {
+      $(this).addClass('active').text('今天');
+    }
+  });
+
+  loadWeekList(today);
+
+  $('#weekTabs').on('click', 'a', function () {
+    $('#weekTabs a').removeClass('active');
+    $(this).addClass('active');
+    var d = parseInt($(this).data('day'), 10);
+    loadWeekList(d);
+  });
+}
+
+function loadWeekList(day) {
+  var list = $('#weekList');
+  list.html('<li class="hl-loading" style="width:100%;">正在加载…</li>');
+  API.get('/api/vod/list', { weekday: day, limit: 6, by: 'hits' }).then(function (j) {
+    list.html('');
+    var items = (j.code === 0 && j.data && j.data.list && j.data.list.length) ? j.data.list : [];
+    if (!items.length) {
+      // 备选方案：当天无数据时展示热播保底
+      API.get('/api/vod/list', { limit: 6, by: 'time' }).then(function (r) {
+        (r.data.list || []).forEach(function (v) {
+          list.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+        });
+        Interact.lazy(list[0]);
+      });
+      return;
+    }
+    items.forEach(function (v) {
+      list.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+    });
+    Interact.lazy(list[0]);
+  });
+}
+
+function renderVodSections() {
+  if (!Theme.on('home.vod.btn', true)) return;
+  var ids = (Theme.get('home.vod.id', '1,2,3,4,5') || '').split(',').map(Number);
+  var rankIds = (Theme.get('home.vod.rank_id', '1,2') || '').split(',').map(Number);
+  var rankBy = Theme.get('home.vod.rank_by', 'hits_week');
+  var showRank = Theme.on('home.vod.rank', true);
+
+  var container = document.getElementById('vodSections');
+  container.innerHTML = '';
+
+  ids.forEach(function (tid) {
+    var t = allTypes.filter(function (x) { return x.type_id === tid; })[0];
+    if (!t) return;
+
+    var hasRank = showRank && rankIds.indexOf(tid) >= 0;
+    // 原版海螺模板规范：有排行榜时卡片留第 6 列（渲染 5 或 10 张卡片），排行榜以 absolute top:-53px right:0 填充在第 6 列
+    var vodNum = hasRank ? 10 : 12;
+
+    var box = document.createElement('div');
+    box.className = 'container';
+    box.innerHTML =
+      '<div class="hl-row-box">' +
+      '<div class="hl-rb-vod clearfix">' +
+      '<div class="hl-rb-head clearfix">' +
+      '<h2 class="hl-rb-title"><a href="/type.html?id=' + t.type_id + '"><i class="iconfont hl-icon-dianshiju3"></i>' + U.esc(t.type_name) + '</a></h2>' +
+      '<a class="hl-rb-more hl-text-muted" href="/type.html?id=' + t.type_id + '">更多<i class="iconfont hl-icon-jiantouyou"></i></a>' +
+      '</div>' +
+      '<div class="row">' +
+      '<div class="hl-list-wrap ' + (hasRank ? 'hl-list-rk ' : '') + 'hl-list-v6" id="wrap-' + t.type_id + '">' +
+      '<ul class="hl-vod-list clearfix" id="vodsList-' + t.type_id + '"></ul>' +
+      '<div class="hl-goto-box hl-hide-sm"><a class="hl-bg-subs hl-text-muted" href="/type.html?id=' + t.type_id + '">更多' + U.esc(t.type_name) + '<i class="iconfont hl-icon-jiantouyou"></i></a></div>' +
+      (hasRank ? '<div id="vodsRank-' + t.type_id + '"></div>' : '') +
+      '</div>' +
+      '</div></div></div>';
+    container.appendChild(box);
+
+    API.get('/api/vod/list', { type_id: tid, limit: vodNum, by: 'time' }).then(function (j) {
+      if (j.code !== 0) return;
+      var ul = $('#vodsList-' + t.type_id);
+      j.data.list.forEach(function (v) {
+        ul.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+      });
+      Interact.lazy(ul[0]);
+    });
+
+    if (hasRank) {
+      API.get('/api/vod/list', { type_id: tid, limit: 8, by: rankBy }).then(function (j) {
+        if (j.code !== 0) return;
+        $('#vodsRank-' + t.type_id).replaceWith(Card.rankHome(j.data.list, t.type_name, '/rank.html?id=' + t.type_id));
+        Interact.lazy($('#wrap-' + t.type_id + ' .hl-vod-rank')[0]);
+      });
+    }
+  });
+}
+
+function renderTopics() {
+  if (!Theme.on('home.topic.btn', true)) { $('#topicsModule').hide(); return; }
+  $('#topicTitle').text(Theme.get('home.topic.title', '精彩专题'));
+  API.get('/api/topic/list').then(function (j) {
+    if (j.code !== 0 || !j.data.length) { $('#topicsModule').hide(); return; }
+    var ul = $('#topicList');
+    j.data.slice(0, 4).forEach(function (t) {
+      ul.append('<li class="hl-list-item hl-col-xs-12 hl-col-sm-6 hl-col-md-4 hl-col-lg-3">' + Card.topicItem(t) + '</li>');
+    });
+    Interact.lazy(ul[0]);
+  });
+}
+
+function renderArts() {
+  if (!Theme.on('home.art.btn', true)) { $('#artsModule').hide(); return; }
+  $('#artTitle').text(Theme.get('home.art.title', '新闻头条'));
+  API.get('/api/art/list', { limit: 6 }).then(function (j) {
+    var items = (j.code === 0 && j.data && j.data.list) ? j.data.list : [];
+    if (!items.length) { $('#artsModule').hide(); return; }
+    var ul = $('#artList');
+    items.forEach(function (a) {
+      ul.append('<li class="hl-list-item hl-col-xs-12 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.artItem(a) + '</li>');
+    });
+    Interact.lazy(ul[0]);
+  });
+}
+
+function renderLinks() {
+  if (!Theme.on('home.links.btn', true)) { $('#linksModule').hide(); return; }
+  $('#linksTitle').text(Theme.get('home.links.title', '友情链接'));
+  API.get('/api/links').then(function (j) {
+    if (j.code !== 0 || !j.data.length) { $('#linksModule').hide(); return; }
+    var ul = $('#linkList');
+    j.data.forEach(function (l) {
+      ul.append('<li class="hl-col-xs-6 hl-col-sm-4 hl-col-md-2"><a href="' + U.esc(l.link_url) + '" target="_blank" rel="noopener">' + U.esc(l.link_name) + '</a></li>');
+    });
+  });
+}
+
+function bindSearch() {
+  var input = $('#searchInput');
+  input.attr('placeholder', Theme.get('theme.search.tips', '请输入片名、演员或导演'));
+  $('#btnSearch').on('click', function () { doSearch(input.val()); });
+  input.on('keydown', function (e) { if (e.key === 'Enter') doSearch(input.val()); });
+
+  $('#skinToggle').on('click', function () {
+    Theme.toggleSkin();
+    $('#skinText').text(Theme.get('theme.style.color', '0') === '1' ? '浅色模式' : '深色模式');
+  });
+
+  if (Theme.on('theme.search.suggest', true)) {
+    var timer = null;
+    input.on('input', function () {
+      clearTimeout(timer);
+      var v = input.val().trim();
+      if (!v) { $('#suggestBox').html(''); return; }
+      timer = setTimeout(function () {
+        API.get('/api/vod/suggest', { wd: v }).then(function (j) {
+          if (j.code !== 0 || !j.data.length) { $('#suggestBox').html(''); return; }
+          $('#suggestBox').html(
+            '<ul class="hl-search-list">' + j.data.map(function (n) {
+              return '<li><a href="javascript:;" onclick="doSearch(\'' + n.replace(/'/g, "\\'") + '\')">' + U.esc(n) + '</a></li>';
+            }).join('') + '</ul>'
+          );
+        });
+      }, 180);
+    });
+  }
+}
+
+function doSearch(kw) {
+  kw = (kw || '').trim();
+  if (!kw) return;
+  location.href = '/search.html?wd=' + encodeURIComponent(kw);
+}
+
+function initSwipers() {
+  if (typeof Swiper === 'undefined') return;
+  if (document.querySelectorAll('#bannerList .hl-br-item').length > 1) {
+    new Swiper('#conch-banner .conch-br-swiper', {
+      loop: true,
+      autoplay: { delay: 5000, disableOnInteraction: false },
+      pagination: { el: '#bannerPager', clickable: true },
+      navigation: { nextEl: '#conch-banner .swiper-button-next', prevEl: '#conch-banner .swiper-button-prev' },
+    });
+  }
+}
+</script>
+</body>
+</html>

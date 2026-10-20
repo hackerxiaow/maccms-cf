@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>影视详情 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="conch-ctwrap-auto">
+    <div class="hl-has-item">
+      <div class="hl-topbg" id="topbg">
+        <span class="hl-topbg-pic" id="topbgPic"></span>
+        <span class="hl-topbg-mask"></span>
+      </div>
+
+      <div class="container">
+        <div class="hl-row-box clearfix">
+          <div class="hl-col-xs-12 hl-col-md-70w hl-col-lg-9">
+            <div class="hl-detail-content hl-marg-right50 clearfix">
+              <div class="hl-dc-pic">
+                <span class="hl-item-thumb hl-lazy" id="dcPic" title="" data-original="">
+                  <div class="hl-pic-tag" id="dcTag"></div>
+                </span>
+              </div>
+
+              <div class="hl-dc-content">
+                <div class="hl-dc-headwrap">
+                  <h1 class="hl-dc-title" id="dcTitle">载入中…</h1>
+                  <div class="hl-dc-sub" id="dcSub"></div>
+                </div>
+
+                <div class="hl-dc-btns hl-from-buttons">
+                  <span class="hl-play-wb">
+                    <a href="javascript:;" class="hl-play-btn hl-btn-gradient" id="btnPlay"><i class="iconfont hl-icon-shipin"></i>&nbsp;立即播放</a>
+                  </span>
+                  <span class="hl-form-wb">
+                    <a class="hl-from-btn hl-text-muted" href="javascript:;" id="btnFrom">
+                      <i class="iconfont hl-jiantou hl-icon-jiantouxia hl-pull-right"></i>
+                      <span class="hl-lc-1"><i class="iconfont hl-icon-laiyuan"></i>&nbsp;选择线路</span>
+                    </a>
+                    <div class="hl-from-wrap hl-alert-box hl-bg-site hl-fadeIn-sm hl-half-alert hl-half-y100" id="fromWrap" style="display:none;">
+                      <div class="hl-from-title"><h4>选择来源</h4></div>
+                      <ul class="hl-from-list" id="fromList"></ul>
+                    </div>
+                  </span>
+                  <a href="javascript:;" class="hl-btn-border" id="btnData"><i class="iconfont hl-icon-tixing"></i>&nbsp;影片信息</a>
+                </div>
+
+                <div class="hl-vod-data hl-full-items" id="dataPanel">
+                  <div class="hl-full-box">
+                    <a class="hl-close-full hl-text-muted" href="javascript:;" id="btnCloseData"><i class="iconfont hl-icon-cuo"></i></a>
+                    <h2 class="hl-full-title">影片信息</h2>
+                    <div id="dataContent"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="hl-col-xs-12 hl-col-md-30w hl-col-lg-3">
+            <div class="hl-detail-side hl-bg-site clearfix" id="scoreSide">
+              <div class="hl-score-wrap">
+                <div class="hl-score-rating">
+                  <ul class="rating-s">
+                    <li class="five"></li><li class="four"></li><li class="three"></li><li class="two"></li><li class="one"></li>
+                  </ul>
+                  <div class="hl-text-conch" style="font-size:1.8rem;font-weight:900;line-height:1.2;" id="scoreNum">0.0</div>
+                  <div class="hl-text-muted" style="font-size:.8rem;">豆瓣评分</div>
+                </div>
+                <div class="rating-list">
+                  <ul class="rating-star" id="ratingStar">
+                    <li></li><li></li><li></li><li></li><li></li>
+                  </ul>
+                  <div class="hl-text-muted" style="font-size:.76rem;text-align:center;margin-top:4px;">点击星星为本站评分</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="conch-ctwrap hl-pa0">
+    <div class="container">
+      <div class="hl-row-box clearfix">
+        <div class="hl-col-xs-12 hl-col-md-70w hl-col-lg-9">
+          <div class="hl-rb-left hl-marg-right50 clearfix">
+
+            <div class="hl-row-box hl-rb-playlist hl-tabs-item clearfix" id="playlistBox">
+              <div class="hl-rb-head clearfix">
+                <h3 class="hl-rb-title">播放列表</h3>
+                <div class="hl-rb-tips hl-notice-box hl-text-muted" style="flex:1;">
+                  <span id="srcTips">当前资源来源</span>
+                </div>
+                <a class="hl-sort-btn hl-rb-more hl-text-muted hl-pull-right" href="javascript:void(0)"><i class="iconfont hl-icon-daoxu"></i>&nbsp;<span>倒序</span></a>
+              </div>
+              <div class="hl-play-source">
+                <div class="hl-plays-wrap hl-tabs-swiper">
+                  <div class="hl-plays-from hl-tabs" id="sourceTabs"></div>
+                </div>
+                <div id="sourceBoxes"></div>
+              </div>
+            </div>
+
+            <div class="hl-row-box hl-rb-content clearfix" id="contentBox">
+              <div class="hl-rb-head clearfix"><h3 class="hl-rb-title">剧情简介</h3></div>
+              <div class="hl-content-wrap hl-content-hide">
+                <span class="hl-content-text" id="vodContent"></span>
+              </div>
+            </div>
+
+            <div class="hl-row-box hl-rb-rel clearfix" id="relBox">
+              <div class="hl-rb-head clearfix">
+                <h3 class="hl-rb-title" id="relTitle">相关视频</h3>
+                <a class="hl-rb-more hl-text-muted" href="/type.html">更多<i class="iconfont hl-icon-jiantouyou"></i></a>
+              </div>
+              <div class="row">
+                <div class="hl-list-wrap hl-list-v6">
+                  <ul class="hl-vod-list clearfix" id="relList"></ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="hl-row-box hl-rb-comment clearfix">
+              <div class="hl-rb-head clearfix"><h3 class="hl-rb-title">影迷评论</h3></div>
+              <div class="hl-comm-form">
+                <input type="text" id="cmtName" placeholder="您的昵称（选填）" maxlength="20">
+                <textarea id="cmtText" placeholder="分享您的观后感与评分…"></textarea>
+                <button class="hl-comm-submit" onclick="submitComment()">发表影评</button>
+              </div>
+              <div class="hl-comm-list" id="cmtList"></div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="hl-col-xs-12 hl-col-md-30w hl-col-lg-3 hl-hidden-xs">
+          <div class="hl-rb-side clearfix" id="sideRank"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/js/swiper.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+var params = new URLSearchParams(location.search);
+var vodId = parseInt(params.get('id') || '0', 10);
+var vod = null;
+
+$(function () {
+  Theme.init().then(function () { Layout.render('detail');
+    loadDetail();
+  });
+});
+
+function doSearch(kw) {
+  kw = (kw || '').trim();
+  if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
+}
+
+function loadDetail() {
+  if (!vodId) { location.href = '/'; return; }
+  API.get('/api/vod/detail/' + vodId).then(function (j) {
+    if (j.code !== 0 || !j.data) {
+      $('#dcTitle').text('影片不存在或已下架');
+      return;
+    }
+    vod = j.data;
+    document.title = vod.vod_name + ' - MacCMS 影视';
+    renderDetail();
+    renderSources();
+    loadRelated();
+    loadComments();
+    loadSideRank();
+  });
+}
+
+function renderDetail() {
+  var ph = U.placeholder(vod.vod_name, U.hash(vod.vod_name));
+
+  if (Theme.on('detail.bg.btn', false)) {
+    var bg = vod.vod_pic_slide || vod.vod_pic || ph;
+    document.body.classList.add('conch-hasbg');
+    $('#topbgPic').css('background-image', 'url("' + bg + '")');
+  } else {
+    $('#topbg').hide();
+  }
+
+  $('#dcPic').attr('data-original', vod.vod_pic || ph).attr('title', vod.vod_name);
+  Interact.lazy($('#dcPic')[0]);
+
+  var dbl = parseFloat(vod.vod_douban_score || 0);
+  if (Theme.on('theme.cover.tag', true)) {
+    if (dbl > 7.6) $('#dcTag').html('<span class="douban">豆瓣高分</span>');
+    else if (vod.vod_remarks) $('#dcTag').html('<span class="state">' + U.esc(vod.vod_remarks) + '</span>');
+    else if (vod.vod_year) $('#dcTag').html('<span class="version">' + U.esc(vod.vod_year) + '</span>');
+  }
+
+  $('#dcTitle').text(vod.vod_name);
+  $('#dcSub').text(vod.vod_sub || '');
+  $('#scoreNum').text(dbl > 0 ? dbl.toFixed(1) : (vod.vod_score || '0.0'));
+
+  var groups = vod.play_groups || [];
+  if (groups.length) {
+    $('#btnPlay').attr('href', '/play.html?id=' + vod.vod_id + '&sid=0&nid=0');
+    var fl = $('#fromList');
+    groups.forEach(function (g, i) {
+      fl.append('<li' + (i === 0 ? ' class="active"' : '') + '><i class="iconfont hl-icon-dui hl-pull-right hl-text-muted"></i>' +
+        '<a href="/play.html?id=' + vod.vod_id + '&sid=' + i + '&nid=0"><span class="hl-lc-1">' + U.esc(g.from.toUpperCase()) + '</span></a></li>');
+    });
+    $('#btnFrom').on('click', function (e) {
+      e.stopPropagation();
+      $('#fromWrap').toggle();
+    });
+    $(document).on('click', function (e) {
+      if (!e.target.closest('.hl-form-wb')) $('#fromWrap').hide();
+    });
+  } else {
+    $('#btnPlay').hide();
+  }
+
+  $('#btnData').on('click', function () { $('#dataPanel').addClass('show'); });
+  $('#btnCloseData').on('click', function () { $('#dataPanel').removeClass('show'); });
+  $('#dataPanel').on('click', function (e) { if (e.target.id === 'dataPanel') $('#dataPanel').removeClass('show'); });
+
+  $('#dataContent').html(
+    '<ul>' +
+    '<li><em>片名：</em>' + U.esc(vod.vod_name) + '</li>' +
+    '<li><em>状态：</em><span class="hl-text-conch">' + U.esc(vod.vod_remarks || '已完结') + '</span></li>' +
+    '<li><em>主演：</em>' + U.actorLinks(vod.vod_actor) + '</li>' +
+    '<li><em>导演：</em>' + U.actorLinks(vod.vod_director) + '</li>' +
+    '<li><em>年份：</em>' + U.esc(vod.vod_year || '未知') + '</li>' +
+    '<li><em>地区：</em>' + U.esc(vod.vod_area || '未知') + '</li>' +
+    '<li><em>类型：</em>' + U.esc(vod.vod_class || vod.type_name || '内详') + '</li>' +
+    '<li><em>上映：</em>' + U.esc(vod.vod_pubdate || '未知') + '</li>' +
+    '<li><em>语言：</em>' + U.esc(vod.vod_lang || '内详') + '</li>' +
+    '<li><em>更新：</em>' + (vod.vod_time ? new Date(vod.vod_time * 1000).toLocaleString() : '-') + '</li>' +
+    '<li class="blurb"><em>简介：</em>' + U.esc(vod.vod_content || vod.vod_blurb || '暂无简介') + '</li>' +
+    '</ul>'
+  );
+
+  if (Theme.on('detail.content.btn', true)) {
+    $('#vodContent').html('<p>' + U.esc(vod.vod_content || vod.vod_blurb || '暂无简介') + '</p>');
+  } else {
+    $('#contentBox').hide();
+  }
+
+  Interact.bindRating();
+}
+
+function renderSources() {
+  var groups = vod.play_groups || [];
+  if (!groups.length) {
+    $('#playlistBox').html('<div class="hl-empty">暂无可播放资源</div>');
+    return;
+  }
+  if (!Theme.on('detail.play.btn', true)) { $('#playlistBox').hide(); return; }
+
+  var tabs = $('#sourceTabs');
+  var boxes = $('#sourceBoxes');
+
+  groups.forEach(function (g, gi) {
+    var btn = $('<a class="hl-tabs-btn' + (gi === 0 ? ' active' : '') + '"><i class="iconfont hl-icon-shipin"></i>&nbsp;' + U.esc(g.from.toUpperCase()) + '</a>');
+    btn.data('gi', gi);
+    tabs.append(btn);
+
+    var box = $('<div class="hl-tabs-box hl-fadeIn" style="display:' + (gi === 0 ? 'block' : 'none') + ';">');
+    var ul = $('<ul class="hl-plays-list hl-sort-list' + (g.urls.length > 6 ? ' hl-list-hide-xs' : '') + ' clearfix" id="hl-plays-list-' + gi + '">');
+    g.urls.forEach(function (ep, ei) {
+      ul.append('<li class="hl-col-xs-4 hl-col-sm-2"><a href="/play.html?id=' + vod.vod_id + '&sid=' + gi + '&nid=' + ei + '">' + U.esc(ep.name) + '</a></li>');
+    });
+    if (g.urls.length > 6) {
+      ul.append('<div class="hl-show-div hl-col-xs-4 hl-col-sm-2"><a href="javascript:;" class="hl-show-list"><i class="iconfont hl-icon-jiantoushang"></i><em>展开全部</em></a></div>');
+    }
+    box.append(ul);
+    boxes.append(box);
+  });
+
+  tabs.on('click', '.hl-tabs-btn', function () {
+    var gi = $(this).data('gi');
+    tabs.find('.hl-tabs-btn').removeClass('active');
+    $(this).addClass('active');
+    boxes.find('.hl-tabs-box').hide().eq(gi).show();
+    updateTips(gi);
+  });
+
+  updateTips(0);
+
+  Interact.bindShowAll($('#playlistBox')[0]);
+  Interact.bindSort($('#playlistBox')[0]);
+}
+
+function updateTips(gi) {
+  var g = vod.play_groups[gi];
+  if (!g) return;
+  $('#srcTips').html('<i class="iconfont hl-icon-tongzhi"></i>&nbsp;当前资源来源<span class="hl-text-site">' + U.esc(g.from.toUpperCase()) + '</span>&nbsp;-&nbsp;' + U.esc(g.note || '在线播放,无需安装播放器'));
+}
+
+function loadRelated() {
+  if (!Theme.on('detail.rel.btn', true)) { $('#relBox').hide(); return; }
+  $('#relTitle').text(Theme.get('detail.rel.title', '相关视频'));
+  API.get('/api/vod/list', { type_id: vod.type_id, limit: 6, by: 'time' }).then(function (j) {
+    if (j.code !== 0) return;
+    var ul = $('#relList');
+    j.data.list.forEach(function (v) {
+      if (v.vod_id === vod.vod_id) return;
+      ul.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+    });
+    Interact.lazy(ul[0]);
+  });
+}
+
+function loadSideRank() {
+  if (!Theme.on('detail.score.btn', true)) { $('#scoreSide').hide(); }
+  var by = Theme.get('detail.vodside.by', 'hits');
+  var num = Theme.num('detail.vodside.num', 10);
+  API.get('/api/vod/list', { type_id: vod.type_id, limit: num, by: by }).then(function (j) {
+    if (j.code !== 0) return;
+    var html = '<div class="hl-rb-head clearfix"><h3 class="hl-rb-title">' + U.esc(Theme.get('detail.vodside.title', '排行榜')) + '</h3></div>';
+    html += '<ul class="hl-rank-list clearfix">';
+    j.data.list.forEach(function (v, i) {
+      html += '<li><a class="hl-lc-1" href="/detail.html?id=' + v.vod_id + '" title="' + U.esc(v.vod_name) + '">' +
+        '<span class="hl-part-nums hl-num-' + (i + 1) + '">' + (i + 1) + '</span>' +
+        '<span class="hl-item-name">' + U.esc(v.vod_name) + '</span></a></li>';
+    });
+    html += '</ul>';
+    $('#sideRank').html(html);
+  });
+}
+
+function loadComments() {
+  API.get('/api/comment/list', { mid: 1, rid: vodId }).then(function (j) {
+    var list = (j.code === 0 && j.data) ? j.data : [];
+    var box = $('#cmtList');
+    if (!list.length) { box.html('<div class="hl-empty">还没有影评，抢先发表你的观后感吧</div>'); return; }
+    box.html('');
+    list.forEach(function (c) {
+      box.append(
+        '<div class="hl-comm-item">' +
+        '<div class="hl-comm-avatar">' + U.esc((c.comment_name || '影').charAt(0)) + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+        '<div class="hl-comm-head"><span class="hl-comm-name">' + U.esc(c.comment_name) + '</span>' +
+        '<span class="hl-comm-time">' + (c.comment_time ? new Date(c.comment_time * 1000).toLocaleString() : '') + '</span></div>' +
+        '<div class="hl-comm-text">' + U.esc(c.comment_content) + '</div>' +
+        '</div></div>'
+      );
+    });
+  });
+}
+
+function submitComment() {
+  var name = $('#cmtName').val().trim();
+  var content = $('#cmtText').val().trim();
+  if (!content) { alert('请输入评论内容'); return; }
+  API.post('/api/comment/add', { mid: 1, rid: vodId, name: name, content: content }).then(function (j) {
+    if (j.code === 0) { $('#cmtText').val(''); loadComments(); }
+    else alert(j.msg || '发表失败');
+  });
+}
+</script>
+</body>
+</html>

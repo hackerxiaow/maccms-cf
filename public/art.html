@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>影视资讯 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item">
+    <div id="artDetailWrap" style="padding:20px 0;">
+      <div class="hl-loading">正在加载资讯…</div>
+    </div>
+
+    <div class="hl-row-box" id="relArtBox">
+      <div class="hl-rb-head clearfix">
+        <h3 class="hl-rb-title">最新资讯</h3>
+        <a class="hl-rb-more hl-text-muted" href="/art.html">全部资讯<i class="iconfont hl-icon-jiantouyou"></i></a>
+      </div>
+      <ul class="hl-art-list clearfix" id="relArtList"></ul>
+    </div>
+  </div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+$(function () {
+  Theme.init().then(function () { Layout.render('art');
+
+    var aid = parseInt(new URLSearchParams(location.search).get('id') || '0', 10);
+
+    API.get('/api/art/list', { limit: 8 }).then(function (j) {
+      var list = (j.code === 0 && j.data && j.data.list) ? j.data.list : (Array.isArray(j.data) ? j.data : []);
+      var ul = $('#relArtList');
+      list.forEach(function (a) {
+        ul.append('<li class="hl-list-item hl-col-xs-12 hl-col-sm-6">' + Card.artItem(a) + '</li>');
+      });
+      Interact.lazy(ul[0]);
+
+      if (!aid) { renderArtList(list); return; }
+      API.get('/api/art/detail/' + aid).then(function (r) {
+        if (r.code !== 0 || !r.data) { $('#artDetailWrap').html('<div class="hl-empty">文章不存在</div>'); return; }
+        renderArtDetail(r.data);
+      });
+    });
+
+    function renderArtList(list) {
+      var html = '<h1 style="font-size:1.5rem;font-weight:900;margin:0 0 16px;">' + U.esc(Theme.get('art.index.title', '最新资讯')) + '</h1>';
+      html += '<ul class="hl-art-list clearfix">';
+      list.forEach(function (a) {
+        html += '<li class="hl-list-item hl-col-xs-12 hl-col-sm-6">' + Card.artItem(a) + '</li>';
+      });
+      html += '</ul>';
+      $('#artDetailWrap').html(html);
+      Interact.lazy($('#artDetailWrap')[0]);
+    }
+
+    function renderArtDetail(a) {
+      document.title = a.art_name + ' - MacCMS 影视';
+      var html = '<article class="hl-article-main">';
+      html += '<header class="hl-article-head">';
+      html += '<h1 class="hl-article-title">' + U.esc(a.art_name) + '</h1>';
+      html += '<div class="hl-article-meta">';
+      html += '<span>来源：' + U.esc(a.art_from || '本站原创') + '</span>';
+      html += '<span>作者：' + U.esc(a.art_author || '官方编辑') + '</span>';
+      html += '<span>时间：' + (a.art_time ? new Date(a.art_time * 1000).toLocaleString() : '-') + '</span>';
+      html += '<span>阅读：' + (a.art_hits || 0) + '</span>';
+      html += '</div></header>';
+      html += '<div class="hl-article-box">' + (a.art_content || '<p>' + U.esc(a.art_blurb || '') + '</p>') + '</div>';
+      html += '<div class="hl-article-paged"><span style="color:var(--tx-mute,#888);">' + U.esc(Theme.get('art.detail.copyright', '本文由网络整理 © 版权归原作者所有')) + '</span>';
+      html += '<a href="/art.html">返回资讯列表 →</a></div>';
+      html += '</article>';
+      $('#artDetailWrap').html(html);
+    }
+
+  });
+});
+
+function doSearch(kw) {
+  kw = (kw || '').trim();
+  if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
+}
+
+</script>
+</body>
+</html>

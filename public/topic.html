@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>影视专题 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item">
+    <div id="topicDetailWrap" style="padding:20px 0;">
+      <div class="hl-loading">正在加载专题…</div>
+    </div>
+
+    <div class="hl-row-box" id="latestTopicBox">
+      <div class="hl-rb-head clearfix">
+        <h3 class="hl-rb-title">最新专题</h3>
+        <a class="hl-rb-more hl-text-muted" href="/topic.html">全部专题<i class="iconfont hl-icon-jiantouyou"></i></a>
+      </div>
+      <ul class="hl-topic-list hl-wide-list hl-list-v8 clearfix" id="latestTopicList"></ul>
+    </div>
+  </div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+$(function () {
+  Theme.init().then(function () { Layout.render('topic');
+
+    var tid = parseInt(new URLSearchParams(location.search).get('id') || '0', 10);
+
+    API.get('/api/topic/list').then(function (j) {
+      var topics = (j.code === 0 && j.data) ? j.data : [];
+      var ul = $('#latestTopicList');
+      topics.slice(0, 4).forEach(function (t) {
+        ul.append('<li class="hl-list-item hl-col-xs-6 hl-col-sm-4 hl-col-md-3 hl-col-lg-2">' + Card.topicItem(t) + '</li>');
+      });
+      Interact.lazy(ul[0]);
+
+      if (!tid) { renderTopicList(topics); return; }
+      var cur = topics.filter(function (t) { return t.topic_id === tid; })[0];
+      if (!cur) { $('#topicDetailWrap').html('<div class="hl-empty">专题不存在</div>'); return; }
+      renderTopicDetail(cur);
+    });
+
+    function renderTopicList(topics) {
+      var html = '<h1 style="font-size:1.5rem;font-weight:900;margin:0 0 16px;">' + U.esc(Theme.get('topic.index.title', '精彩专题')) + '</h1>';
+      html += '<ul class="hl-topic-list hl-wide-list hl-list-v8 clearfix">';
+      topics.forEach(function (t) {
+        html += '<li class="hl-list-item hl-col-xs-6 hl-col-sm-4 hl-col-md-3 hl-col-lg-2">' + Card.topicItem(t) + '</li>';
+      });
+      html += '</ul>';
+      $('#topicDetailWrap').html(html);
+      Interact.lazy($('#topicDetailWrap')[0]);
+    }
+
+    function renderTopicDetail(t) {
+      document.title = t.topic_name + ' - MacCMS 影视';
+      var html = '<div class="hl-topic-content">';
+      html += '<div class="row">';
+      html += '<div class="hl-col-xs-12 hl-col-sm-5 hl-col-md-40w hl-col-lg-4">';
+      html += '<div class="hl-item-thumb hl-lazy" data-original="' + U.esc(t.topic_pic || U.placeholder(t.topic_name, U.hash(t.topic_name))) + '" style="padding-top:0;height:auto;aspect-ratio:3/4;"></div>';
+      html += '</div>';
+      html += '<div class="hl-col-xs-12 hl-col-sm-7 hl-col-md-60w hl-col-lg-8">';
+      html += '<h1 style="font-size:1.9rem;font-weight:900;margin:0 0 10px;">' + U.esc(t.topic_name) + '</h1>';
+      html += '<div class="hl-text-muted" style="line-height:1.8;margin-bottom:14px;">' + U.esc(t.topic_blurb || '') + '</div>';
+      html += '<div class="hl-article-box">' + U.esc(t.topic_content || '') + '</div>';
+      html += '</div></div></div>';
+
+      html += '<div class="hl-row-box"><div class="hl-rb-head clearfix"><h3 class="hl-rb-title">专题影视</h3></div>';
+      html += '<ul class="hl-vod-list clearfix" id="topicVods"></ul></div>';
+
+      $('#topicDetailWrap').html(html);
+      Interact.lazy($('#topicDetailWrap')[0]);
+
+      API.get('/api/topic/detail/' + t.topic_id).then(function (j) {
+        if (j.code !== 0 || !j.data) return;
+        var ul = $('#topicVods');
+        (j.data.vods || []).forEach(function (v) {
+          ul.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+        });
+        Interact.lazy(ul[0]);
+      });
+    }
+
+  });
+});
+
+function doSearch(kw) {
+  kw = (kw || '').trim();
+  if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
+}
+
+</script>
+</body>
+</html>

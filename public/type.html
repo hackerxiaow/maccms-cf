@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>影视筛选 - MacCMS 影视</title>
+  <meta name="keywords" content="电影筛选,电视剧筛选,综艺筛选,动漫筛选,高清影视分类">
+  <meta name="description" content="按类型、地区、年份、语言、排序等多维度精确检索高清影视">
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+
+<!-- 顶部导航 (public/head.html) -->
+<div id="conch-header" class="conch-header">
+  <div class="conch-headwrap">
+    <div class="container">
+      <div class="conch-logo">
+        <a class="hl-logo hl-logo-black" href="/" style="background-image: url(/static/theme/img/logo_black.png);"></a>
+        <a class="hl-logo hl-logo-white" href="/" style="background-image: url(/static/theme/img/logo_white.png);"></a>
+      </div>
+      <div class="conch-list conch-content">
+        <ul class="hl-list hl-text-muted clearfix">
+          <li class="hl-list-font hl-hidden-xs"><a href="javascript:;" title="观看记录"><i class="iconfont hl-icon-shijian"></i></a></li>
+          <li class="hl-list-font hl-hidden-xs"><a href="/type.html?by=time" title="最新"><i class="iconfont hl-icon-zuixin"></i></a></li>
+          <li class="hl-list-font hl-hidden-xs"><a href="/rank.html" title="排行"><i class="iconfont hl-icon-paihang"></i></a></li>
+          <li class="hl-list-font hl-hidden-xs"><a href="/admin/index.html" title="后台管理"><i class="iconfont hl-icon-shezhi"></i></a></li>
+        </ul>
+      </div>
+      <div class="conch-search">
+        <div class="hl-search-form">
+          <input type="text" id="searchInput" class="hl-search-text hl-search-wd" placeholder="请输入片名、演员或导演" autocomplete="off">
+          <button class="hl-search-submit" type="button" id="btnSearch"><i class="iconfont hl-icon-sousuo"></i></button>
+        </div>
+        <div class="hl-sh-box" id="suggestBox"></div>
+      </div>
+      <div class="conch-nav">
+        <div class="hl-nav-wrap hl-navswiper">
+          <ul class="hl-nav hl-text-site swiper-wrapper clearfix" id="mainNav"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 主体 (对齐 vod/show.html + module/filter.html) -->
+<div id="conch-content" class="conch-content">
+  <div class="conch-ctwrap">
+    <!-- 8 维多维筛选器 -->
+    <div class="container">
+      <div class="hl-row-box">
+        <div class="hl-filter-all clearfix" id="filterBox"></div>
+      </div>
+    </div>
+
+    <!-- 筛选结果列表 -->
+    <div class="container">
+      <div class="hl-row-box">
+        <div class="hl-rb-vod clearfix">
+          <div class="hl-rb-head hl-head-page clearfix">
+            <div class="hl-rb-title hl-site-tabs hl-site-tits hl-text-site" id="sortTabs">
+              <a class="active" href="javascript:;" data-by="time">按最新</a>
+              <a href="javascript:;" data-by="hits">按最热</a>
+              <a href="javascript:;" data-by="score">按评分</a>
+            </div>
+            <span class="hl-rb-total hl-text-muted hl-pull-right" style="line-height:36px;">共<em class="hl-total hl-text-conch" id="totalCount">0</em>个筛选结果</span>
+          </div>
+
+          <div class="row">
+            <div class="hl-list-wrap">
+              <ul class="hl-vod-list clearfix" id="vodList"></ul>
+              <div id="pager"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 页脚 (public/foot.html) -->
+<div id="conch-footer" class="conch-footer">
+  <div class="conch-footwrap hl-bg-subs hl-footnav-show">
+    <div class="container">
+      <div class="hl-footwrap-item">
+        <div class="hl-foot-extra">
+          <ul class="hl-fe-list clearfix">
+            <li class="hl-color-item"><a href="javascript:;" id="skinToggle"><i class="iconfont hl-icon-yueliang"></i><span id="skinText">深色模式</span></a></li>
+            <li class="hl-back-item"><a class="hl-back-top" href="javascript:window.scrollTo({top:0,behavior:'smooth'});"><i class="iconfont hl-icon-jiantoushang"></i><span>返回顶部</span></a></li>
+          </ul>
+        </div>
+        <div class="row">
+          <div class="hl-col-sm-8 hl-col-xs-12">
+            <div class="hl-foot-text hl-text-muted">
+              <p>© 2026 MacCMS Serverless Edition · 海螺影视主题 Conch_M003 · 100% 兼容 MacCMS 8/10 协议</p>
+            </div>
+            <div class="hl-map-nav hl-text-site hl-hidden-xs">
+              <a href="/">返回首页</a><span>—</span>
+              <a href="/rank.html">人气排行榜</a><span>—</span>
+              <a href="/topic.html">影视专题</a><span>—</span>
+              <a href="/art.html">新闻资讯</a><span>—</span>
+              <a href="/admin/index.html">管理后台</a>
+            </div>
+          </div>
+          <div class="hl-col-sm-4 hl-col-xs-12">
+            <div class="hl-foot-logo">
+              <a class="hl-logo hl-bright-0" href="/" style="background-image: url(/static/theme/img/logo_black.png);"></a>
+            </div>
+            <div class="hl-foot-copy hl-text-muted">
+              <p>&copy;&nbsp;2026&nbsp;MacCMS Serverless Edition</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script>
+var params = new URLSearchParams(location.search);
+var curTypeId = parseInt(params.get('id') || '0', 10);
+var curPage = parseInt(params.get('page') || '1', 10);
+var curSort = params.get('by') || 'time';
+var curClass = params.get('class') || params.get('vod_class') || '';
+var curArea = params.get('area') || '';
+var curYear = params.get('year') || '';
+var curLang = params.get('lang') || params.get('vod_lang') || '';
+var curState = params.get('state') || '';
+var curLetter = params.get('letter') || '';
+
+var allTypes = [];
+var filterOptions = null;
+
+$(function () {
+  Theme.init().then(function () {
+    renderNav();
+    bindEvents();
+    loadFilters().then(function () {
+      loadVods();
+    });
+  });
+});
+
+function renderNav() {
+  API.get('/api/types').then(function (j) {
+    allTypes = j.code === 0 ? j.data : [];
+    var nav = $('#mainNav');
+    nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/">首页</a></li>');
+    var typeIds = (Theme.get('nav.type.PC', '1,2,3,4,5') || '').split(',').map(Number);
+    allTypes.forEach(function (t) {
+      if (typeIds.indexOf(t.type_id) >= 0) {
+        var active = curTypeId === t.type_id ? ' class="hl-text-conch active"' : '';
+        nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/type.html?id=' + t.type_id + '"' + active + '>' + U.esc(t.type_name) + '</a></li>');
+      }
+    });
+    nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/topic.html">专题</a></li>');
+    nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/art.html">资讯</a></li>');
+    nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/rank.html">排行</a></li>');
+  });
+}
+
+function bindEvents() {
+  // 排序维度切换
+  $('#sortTabs a').each(function () {
+    if ($(this).data('by') === curSort) {
+      $('#sortTabs a').removeClass('active');
+      $(this).addClass('active');
+    }
+  });
+
+  $('#sortTabs').on('click', 'a', function () {
+    $('#sortTabs a').removeClass('active');
+    $(this).addClass('active');
+    curSort = $(this).data('by');
+    curPage = 1;
+    loadVods();
+  });
+
+  // 搜索与皮肤
+  $('#btnSearch').on('click', function () {
+    var kw = $('#searchInput').val().trim();
+    if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
+  });
+  $('#searchInput').on('keydown', function (e) {
+    if (e.key === 'Enter') $('#btnSearch').click();
+  });
+  $('#skinToggle').on('click', function () {
+    Theme.toggleSkin();
+    $('#skinText').text(Theme.get('theme.style.color', '0') === '1' ? '浅色模式' : '深色模式');
+  });
+}
+
+function loadFilters() {
+  return API.get('/api/vod/filters/' + (curTypeId || 0)).then(function (j) {
+    if (j.code === 0 && j.data) {
+      filterOptions = j.data;
+      renderFilterBox();
+    }
+  });
+}
+
+function renderFilterBox() {
+  if (!filterOptions) return;
+  var box = $('#filterBox');
+  box.html('');
+
+  // 1. 已选条件行 (module/filter.html)
+  var selectedTags = [];
+  if (curTypeId > 0) {
+    var ct = allTypes.filter(function (t) { return t.type_id === curTypeId; })[0];
+    if (ct) selectedTags.push({ label: ct.type_name, key: 'id' });
+  }
+  if (curClass) selectedTags.push({ label: curClass, key: 'class' });
+  if (curArea) selectedTags.push({ label: curArea, key: 'area' });
+  if (curYear) selectedTags.push({ label: curYear, key: 'year' });
+  if (curLang) selectedTags.push({ label: curLang, key: 'lang' });
+  if (curState) selectedTags.push({ label: curState, key: 'state' });
+  if (curLetter) selectedTags.push({ label: curLetter, key: 'letter' });
+
+  var optHtml = '<div class="hl-filter-wrap hl-filter-opt clearfix">' +
+    '<div class="hl-filter-item hl-filter-text"><span>已选</span></div>' +
+    '<ul class="hl-filter-list hl-filter-opted clearfix">';
+  if (!selectedTags.length) {
+    optHtml += '<li class="hl-slide-swiper">全部</li>';
+  } else {
+    selectedTags.forEach(function (t) {
+      optHtml += '<li class="hl-slide-swiper"><em>+</em>' + U.esc(t.label) + '&nbsp;<a href="javascript:;" onclick="removeFilter(\'' + t.key + '\')"><i class="iconfont hl-icon-cuo"></i></a></li>';
+    });
+  }
+  optHtml += '</ul>' +
+    '<div class="hl-filter-reselect hl-text-muted"><a href="/type.html"><i class="iconfont hl-icon-shuaxin"></i>&nbsp;重<em class="hl-hidden-xs">新筛</em>选</a></div>' +
+    '</div>';
+  box.append(optHtml);
+
+  // 2. 分类行
+  var catHtml = '<div class="hl-filter-wrap clearfix"><div class="hl-filter-item hl-filter-text"><span>分类</span></div><ul class="hl-filter-list clearfix">';
+  catHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (curTypeId === 0 ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'id\', 0)">全部</a></li>';
+  allTypes.forEach(function (t) {
+    catHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (curTypeId === t.type_id ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'id\', ' + t.type_id + ')">' + U.esc(t.type_name) + '</a></li>';
+  });
+  catHtml += '</ul></div>';
+  box.append(catHtml);
+
+  // 3. 类型行
+  if (filterOptions.classes && filterOptions.classes.length) {
+    var clsHtml = '<div class="hl-filter-wrap clearfix"><div class="hl-filter-item hl-filter-text"><span>类型</span></div><ul class="hl-filter-list clearfix">';
+    clsHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (!curClass ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'class\', \'\')">全部</a></li>';
+    filterOptions.classes.slice(0, 16).forEach(function (c) {
+      clsHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (curClass === c ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'class\', \'' + c + '\')">' + U.esc(c) + '</a></li>';
+    });
+    clsHtml += '</ul></div>';
+    box.append(clsHtml);
+  }
+
+  // 4. 地区行
+  if (filterOptions.areas && filterOptions.areas.length) {
+    var areaHtml = '<div class="hl-filter-wrap clearfix"><div class="hl-filter-item hl-filter-text"><span>地区</span></div><ul class="hl-filter-list clearfix">';
+    areaHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (!curArea ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'area\', \'\')">全部</a></li>';
+    filterOptions.areas.slice(0, 14).forEach(function (a) {
+      areaHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (curArea === a ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'area\', \'' + a + '\')">' + U.esc(a) + '</a></li>';
+    });
+    areaHtml += '</ul></div>';
+    box.append(areaHtml);
+  }
+
+  // 5. 年份行
+  if (filterOptions.years && filterOptions.years.length) {
+    var yearHtml = '<div class="hl-filter-wrap clearfix"><div class="hl-filter-item hl-filter-text"><span>年份</span></div><ul class="hl-filter-list clearfix">';
+    yearHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (!curYear ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'year\', \'\')">全部</a></li>';
+    filterOptions.years.slice(0, 14).forEach(function (y) {
+      yearHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (curYear === y ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'year\', \'' + y + '\')">' + U.esc(y) + '</a></li>';
+    });
+    yearHtml += '</ul></div>';
+    box.append(yearHtml);
+  }
+
+  // 6. 语言行
+  if (filterOptions.langs && filterOptions.langs.length) {
+    var langHtml = '<div class="hl-filter-wrap clearfix"><div class="hl-filter-item hl-filter-text"><span>语言</span></div><ul class="hl-filter-list clearfix">';
+    langHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (!curLang ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'lang\', \'\')">全部</a></li>';
+    filterOptions.langs.slice(0, 10).forEach(function (l) {
+      langHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (curLang === l ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'lang\', \'' + l + '\')">' + U.esc(l) + '</a></li>';
+    });
+    langHtml += '</ul></div>';
+    box.append(langHtml);
+  }
+
+  // 7. 资源状态行
+  if (filterOptions.states && filterOptions.states.length) {
+    var stHtml = '<div class="hl-filter-wrap clearfix"><div class="hl-filter-item hl-filter-text"><span>资源</span></div><ul class="hl-filter-list clearfix">';
+    stHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (!curState ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'state\', \'\')">全部</a></li>';
+    filterOptions.states.forEach(function (st) {
+      stHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (curState === st ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'state\', \'' + st + '\')">' + U.esc(st) + '</a></li>';
+    });
+    stHtml += '</ul></div>';
+    box.append(stHtml);
+  }
+
+  // 8. 首字母行
+  if (filterOptions.letters && filterOptions.letters.length) {
+    var letHtml = '<div class="hl-filter-wrap clearfix"><div class="hl-filter-item hl-filter-text"><span>字母</span></div><ul class="hl-filter-list clearfix">';
+    letHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (!curLetter ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'letter\', \'\')">全部</a></li>';
+    filterOptions.letters.forEach(function (lt) {
+      letHtml += '<li class="hl-filter-item"><a href="javascript:;" class="' + (curLetter === lt ? 'hl-text-conch active' : '') + '" onclick="setFilter(\'letter\', \'' + lt + '\')">' + U.esc(lt) + '</a></li>';
+    });
+    letHtml += '</ul></div>';
+    box.append(letHtml);
+  }
+}
+
+function setFilter(key, val) {
+  if (key === 'id') curTypeId = parseInt(val || '0', 10);
+  if (key === 'class') curClass = val;
+  if (key === 'area') curArea = val;
+  if (key === 'year') curYear = val;
+  if (key === 'lang') curLang = val;
+  if (key === 'state') curState = val;
+  if (key === 'letter') curLetter = val;
+  curPage = 1;
+  renderFilterBox();
+  loadVods();
+}
+
+function removeFilter(key) {
+  setFilter(key, '');
+}
+
+function loadVods() {
+  var list = $('#vodList');
+  list.html('<li class="hl-loading" style="width:100%;">正在加载影视…</li>');
+
+  var p = {
+    page: curPage,
+    limit: 36, // 原版 36 宫格卡片
+    by: curSort
+  };
+  if (curTypeId > 0) p.type_id = curTypeId;
+  if (curClass) p.vod_class = curClass;
+  if (curArea) p.area = curArea;
+  if (curYear) p.year = curYear;
+  if (curLang) p.vod_lang = curLang;
+  if (curState) p.state = curState;
+  if (curLetter) p.letter = curLetter;
+
+  API.get('/api/vod/list', p).then(function (j) {
+    if (j.code !== 0 || !j.data || !j.data.list.length) {
+      $('#totalCount').text('0');
+      list.html('<div class="hl-empty-wrap hl-text-center hl-col-xs-12" style="padding:40px 0;"><i class="iconfont hl-icon-wushuju" style="font-size:3rem;opacity:.3;"></i><p class="hl-text-muted" style="margin-top:10px;">暂无匹配的影视数据</p></div>');
+      $('#pager').html('');
+      return;
+    }
+    $('#totalCount').text(j.data.total);
+    list.html('');
+    j.data.list.forEach(function (v) {
+      list.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+    });
+    Interact.lazy(list[0]);
+
+    // 原版分页组件 (widget/page.html)
+    var baseUrl = '/type.html?' + buildQuery();
+    $('#pager').html(Card.page(j.data.page, j.data.pagecount, baseUrl));
+  });
+}
+
+function buildQuery() {
+  var q = [];
+  if (curTypeId) q.push('id=' + curTypeId);
+  if (curSort && curSort !== 'time') q.push('by=' + curSort);
+  if (curClass) q.push('class=' + encodeURIComponent(curClass));
+  if (curArea) q.push('area=' + encodeURIComponent(curArea));
+  if (curYear) q.push('year=' + encodeURIComponent(curYear));
+  if (curLang) q.push('lang=' + encodeURIComponent(curLang));
+  if (curState) q.push('state=' + encodeURIComponent(curState));
+  if (curLetter) q.push('letter=' + encodeURIComponent(curLetter));
+  return q.join('&');
+}
+</script>
+</body>
+</html>
