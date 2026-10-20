@@ -24,10 +24,11 @@
         '      </div>' +
         '      <div class="conch-list conch-content">' +
         '        <ul class="hl-list hl-text-muted clearfix">' +
-        '          <li class="hl-list-font hl-hidden-xs"><a href="javascript:;" title="观看记录"><i class="iconfont hl-icon-shijian"></i></a></li>' +
-        '          <li class="hl-list-font hl-hidden-xs"><a href="/type.html?by=time" title="最新"><i class="iconfont hl-icon-zuixin"></i></a></li>' +
+        '          <li class="hl-list-font hl-hidden-xs"><a href="/user.html" title="会员中心"><i class="iconfont hl-icon-yonghu"></i></a></li>' +
+        '          <li class="hl-list-font hl-hidden-xs"><a href="/gbook.html" title="求片留言"><i class="iconfont hl-icon-liuyan"></i></a></li>' +
+        '          <li class="hl-list-font hl-hidden-xs"><a href="/actor.html" title="明星大咖"><i class="iconfont hl-icon-mingxing"></i></a></li>' +
         '          <li class="hl-list-font hl-hidden-xs"><a href="/rank.html" title="排行"><i class="iconfont hl-icon-paihang"></i></a></li>' +
-        '          <li class="hl-list-font hl-hidden-xs"><a href="/admin/index.html" title="后台管理"><i class="iconfont hl-icon-shezhi"></i></a></li>' +
+        '          <li class="hl-list-font hl-hidden-xs"><a href="/admin/index.html" title="管理后台"><i class="iconfont hl-icon-shezhi"></i></a></li>' +
         '        </ul>' +
         '      </div>' +
         '      <div class="conch-search">' +
@@ -75,10 +76,12 @@
 
       var items = [
         { key: 'home', title: '首页', url: '/', icon: 'hl-icon-shouye' },
+        { key: 'actor', title: '明星', url: '/actor.html', icon: 'hl-icon-mingxing' },
         { key: 'topic', title: '专题', url: '/topic.html', icon: 'hl-icon-zhuanti' },
         { key: 'art', title: '资讯', url: '/art.html', icon: 'hl-icon-xinwen' },
         { key: 'latest', title: '最新', url: '/type.html?by=time', icon: 'hl-icon-zuixin' },
-        { key: 'rank', title: '排行', url: '/rank.html', icon: 'hl-icon-paihang' }
+        { key: 'rank', title: '排行', url: '/rank.html', icon: 'hl-icon-paihang' },
+        { key: 'gbook', title: '留言', url: '/gbook.html', icon: 'hl-icon-liuyan' }
       ];
 
       var typeIds = [];
@@ -97,7 +100,8 @@
         });
         types.forEach(function (t) {
           if (typeIds.indexOf(t.type_id) >= 0) {
-            html += '<li class="hl-nav-item hl-slide-swiper"><a href="/type.html?id=' + t.type_id + '">' +
+            html += '<li class="hl-nav-item hl-slide-swiper"><a href="/type.html?id=' + t.type_id + '"' +
+              (activeKey === 'type_' + t.type_id ? ' class="hl-text-conch active"' : '') + '>' +
               U.esc(t.type_name) + '</a></li>';
           }
         });
@@ -115,9 +119,12 @@
             d += '<li class="hl-menus-item"><a href="/type.html?id=' + t.type_id +
               '"><i class="iconfont hl-icon-dianshiju3"></i><span>' + U.esc(t.type_name) + '</span></a></li>';
           });
-          d += '<li class="hl-menus-item"><a href="/topic.html"><i class="iconfont hl-icon-zhuanti"></i><span>专题</span></a></li>';
-          d += '<li class="hl-menus-item"><a href="/art.html"><i class="iconfont hl-icon-xinwen"></i><span>资讯</span></a></li>';
-          d += '<li class="hl-menus-item"><a href="/rank.html"><i class="iconfont hl-icon-paihang"></i><span>排行</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/actor.html"><i class="iconfont hl-icon-mingxing"></i><span>明星图谱</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/topic.html"><i class="iconfont hl-icon-zhuanti"></i><span>精彩专题</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/art.html"><i class="iconfont hl-icon-xinwen"></i><span>新闻资讯</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/rank.html"><i class="iconfont hl-icon-paihang"></i><span>风云榜单</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/gbook.html"><i class="iconfont hl-icon-liuyan"></i><span>求片留言</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/user.html"><i class="iconfont hl-icon-yonghu"></i><span>会员中心</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/admin/index.html"><i class="iconfont hl-icon-shezhi"></i><span>管理后台</span></a></li>';
           drawer.innerHTML = d;
         }
@@ -203,8 +210,11 @@
         '              <a href="/">首页</a><span>—</span>' +
         '              <a href="/type.html">全部分类</a><span>—</span>' +
         '              <a href="/rank.html">排行榜</a><span>—</span>' +
+        '              <a href="/actor.html">明星库</a><span>—</span>' +
         '              <a href="/topic.html">专题</a><span>—</span>' +
         '              <a href="/art.html">资讯</a><span>—</span>' +
+        '              <a href="/gbook.html">留言求片</a><span>—</span>' +
+        '              <a href="/user.html">会员中心</a><span>—</span>' +
         '              <a href="/api.php/provide/vod/?ac=list" target="_blank">资源接口</a><span>—</span>' +
         '              <a href="/admin/index.html">管理后台</a>' +
         '            </div>' +
@@ -223,28 +233,24 @@
         '  </div>' +
         '</div>';
 
-      var skin = document.getElementById('skinToggle');
-      var skinText = document.getElementById('skinText');
-      if (skinText) {
-        skinText.textContent = Theme.get('theme.style.color', '0') === '1' ? '浅色模式' : '深色模式';
-      }
-      if (skin) skin.addEventListener('click', function () {
-        Theme.toggleSkin();
-        if (skinText) skinText.textContent = Theme.get('theme.style.color', '0') === '1' ? '浅色模式' : '深色模式';
-      });
-
-      // 原生默认隐藏「返回顶部」，这里按滚动位置恢复
-      var backItem = host.querySelector('.hl-back-item');
-      if (backItem) {
-        var onScroll = function () {
-          backItem.classList.toggle('hl-back-show', window.scrollY > 240);
+      // 绑定换肤
+      var skinToggle = document.getElementById('skinToggle');
+      if (skinToggle) {
+        var isDark = function () {
+          return String(Theme.get('theme.style.color', '0')) === '1';
         };
-        window.addEventListener('scroll', onScroll, { passive: true });
-        onScroll();
+        var updateText = function () {
+          var t = document.getElementById('skinText');
+          if (t) t.textContent = isDark() ? '浅色模式' : '深色模式';
+        };
+        updateText();
+        skinToggle.addEventListener('click', function () {
+          Theme.toggleSkin();
+          updateText();
+        });
       }
     },
 
-    /** 一键渲染（多数页面使用） */
     render: function (activeKey) {
       this.header(activeKey);
       this.footer();

@@ -15,10 +15,11 @@ export class AuthUtils {
   }
 
   /**
-   * 生成简单的安全管理 Session Token
+   * 生成安全 Session Token (支持自定义有效期，默认7天)
    */
-  static async generateToken(username: string, secret: string): Promise<string> {
-    const payload = `${username}:${Date.now() + 7 * 24 * 3600 * 1000}`; // 7天有效期
+  static async generateToken(username: string, secret: string, days = 7): Promise<string> {
+    const expireAt = Date.now() + days * 24 * 3600 * 1000;
+    const payload = `${username}:${expireAt}`;
     const encoder = new TextEncoder();
     const key = await crypto.subtle.importKey(
       'raw',
@@ -35,17 +36,17 @@ export class AuthUtils {
   }
 
   /**
-   * 校验 Session Token
+   * 校验 Session Token 并返回状态与解析账号
    */
-  static async verifyToken(token: string, secret: string): Promise<boolean> {
-    if (!token || !token.includes('.')) return false;
+  static async verifyToken(token: string, secret: string): Promise<{ valid: boolean; username?: string }> {
+    if (!token || !token.includes('.')) return { valid: false };
     try {
       const [payloadB64, sigHex] = token.split('.');
       const payload = atob(payloadB64);
       const [username, expStr] = payload.split(':');
       const exp = parseInt(expStr, 10);
 
-      if (Date.now() > exp) return false; // 已过期
+      if (Date.now() > exp) return { valid: false }; // 已过期
 
       const encoder = new TextEncoder();
       const key = await crypto.subtle.importKey(
@@ -60,9 +61,30 @@ export class AuthUtils {
         sigHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
       );
 
-      return await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(payload));
+      const isValid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(payload));
+      return { valid: isValid, username: isValid ? username : undefined };
     } catch {
-      return false;
+      return { valid: false };
     }
+  }
+
+  /**
+   * 批量生成随机充值卡卡号与卡密
+   */
+  static generateCardPair(): { cardNo: string; cardPwd: string } {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const randStr = (len: number) => {
+      let res = '';
+      const bytes = new Uint8Array(len);
+      crypto.getRandomValues(bytes);
+      for (let i = 0; i < len; i++) {
+        res += chars[bytes[i] % chars.length];
+      }
+      return res;
+    };
+    return {
+      cardNo: `MC${Date.now().toString().slice(-6)}${randStr(6)}`,
+      cardPwd: randStr(12),
+    };
   }
 }

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>明星大咖库 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item" style="padding:20px 0;">
+    <!-- 字母检索过滤条 -->
+    <div class="hl-row-box hl-bg-subs hl-tabs" style="border-radius:8px;padding:8px 12px;margin-bottom:18px;">
+      <div id="letterFilter" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span style="font-weight:700;font-size:.9rem;color:var(--tx-mute,#888);margin-right:6px;">字母检索：</span>
+        <a class="hl-tabs-btn active" href="javascript:;" data-letter="">全部</a>
+      </div>
+    </div>
+
+    <!-- 明星列表 -->
+    <div class="hl-row-box clearfix">
+      <div class="hl-rb-head clearfix">
+        <h2 class="hl-rb-title" style="font-size:1.25rem;font-weight:800;">明星大咖榜</h2>
+        <span class="hl-rb-more hl-text-muted" id="actorMeta">正在载入…</span>
+      </div>
+
+      <ul class="hl-one-list clearfix" id="actorList" style="margin-top:14px;"></ul>
+      <div id="actorEmpty" class="hl-empty" style="display:none;padding:50px 0;">暂无符合条件的明星记录</div>
+      <div id="actorPager" class="hl-page-box" style="margin-top:20px;"></div>
+    </div>
+  </div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+var curLetter = '';
+var curPage = parseInt(new URLSearchParams(location.search).get('page') || '1', 10);
+
+$(function () {
+  Theme.init().then(function () {
+    Layout.render('actor');
+    initLetters();
+    loadActors();
+  });
+});
+
+function initLetters() {
+  var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  var box = $('#letterFilter');
+  letters.forEach(function (l) {
+    box.append('<a class="hl-tabs-btn" href="javascript:;" data-letter="' + l + '">' + l + '</a>');
+  });
+
+  box.on('click', '.hl-tabs-btn', function () {
+    box.find('.hl-tabs-btn').removeClass('active');
+    $(this).addClass('active');
+    curLetter = $(this).data('letter');
+    curPage = 1;
+    loadActors();
+  });
+}
+
+function loadActors() {
+  var list = $('#actorList');
+  list.html('<li class="hl-loading" style="grid-column:1/-1;">正在载入明星…</li>');
+
+  var params = { page: curPage, limit: 18 };
+  if (curLetter) params.letter = curLetter;
+
+  API.get('/api/actor/list', params).then(function (j) {
+    if (j.code !== 0 || !j.data || !j.data.list || !j.data.list.length) {
+      list.html('');
+      $('#actorEmpty').show();
+      $('#actorMeta').text('共 0 位明星');
+      $('#actorPager').html('');
+      return;
+    }
+    $('#actorEmpty').hide();
+    $('#actorMeta').text('共 ' + j.data.total + ' 位明星');
+    list.html('');
+
+    j.data.list.forEach(function (a) {
+      list.append(
+        '<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-2" style="margin-bottom:18px;">' +
+        '<a href="/actor_detail.html?id=' + a.actor_id + '" class="hl-actor-card" style="display:block;text-align:center;text-decoration:none;color:inherit;">' +
+        '<div class="hl-lazy" data-original="' + U.esc(a.actor_pic || '/static/theme/img/touxiang.png') + '" style="width:100%;padding-top:100%;border-radius:50%;background-size:cover;background-position:center;box-shadow:0 4px 10px rgba(0,0,0,0.1);margin-bottom:8px;"></div>' +
+        '<div class="hl-lc-1" style="font-weight:700;font-size:.95rem;">' + U.esc(a.actor_name) + '</div>' +
+        '<div class="hl-lc-1" style="font-size:.8rem;color:var(--tx-mute,#888);margin-top:2px;">' + U.esc(a.actor_area || a.actor_works || '知名演员') + '</div>' +
+        '</a></li>'
+      );
+    });
+    Interact.lazy(list[0]);
+    $('#actorPager').html(Card.page(j.data.page, j.data.pagecount, '/actor.html' + (curLetter ? '?letter=' + curLetter : '')));
+  });
+}
+</script>
+</body>
+</html>

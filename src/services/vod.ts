@@ -1,8 +1,20 @@
 // ========================================================
 // 视频数据持久层与查询服务 (基于 Cloudflare D1 SQLite)
+// 深度融合 MacCMS v8 经典能力与 MacCMS v10 全量功能
 // ========================================================
 
-import type { VodItem, TypeItem, PlayGroup, PlayerItem, ArtItem, TopicItem, CommentItem, LinkItem } from '../types/index.ts';
+import type {
+  VodItem,
+  TypeItem,
+  PlayGroup,
+  PlayerItem,
+  DownerItem,
+  ServerItem,
+  ArtItem,
+  TopicItem,
+  CommentItem,
+  LinkItem,
+} from '../types/index.ts';
 import { MacPlayUrlParser } from '../utils/parser.ts';
 
 export interface VodQueryOptions {
@@ -14,21 +26,22 @@ export interface VodQueryOptions {
   area?: string;
   wd?: string;
   letter?: string;
-  by?: 'time' | 'hits' | 'score' | 'id' | 'hits_day' | 'hits_week' | 'hits_month' | 'time_add' | 'rand';
+  by?: 'time' | 'hits' | 'score' | 'id' | 'hits_day' | 'hits_week' | 'hits_month' | 'time_add' | 'level' | 'rand';
   order?: 'desc' | 'asc';
   isEnd?: number;
+  level?: number;
+  lock?: number;
   hours?: number;
   ids?: number[];
   status?: number; // 默认 1
-  /** 海螺主题筛选维度 */
   vodClass?: string;  // 类型/分类标签 (vod_class)
-  vodLang?: string;  // 语言
-  version?: string;  // 版本
-  state?: string;    // 资源状态
-  tag?: string;      // 标签
-  actor?: string;    // 主演精确匹配
-  director?: string; // 导演精确匹配
-  weekday?: number;  // 星期筛选 (0=周日 1=周一 ... 6=周六)
+  vodLang?: string;   // 语言
+  version?: string;   // 版本
+  state?: string;     // 资源状态
+  tag?: string;       // 标签
+  actor?: string;     // 主演精确匹配
+  director?: string;  // 导演精确匹配
+  weekday?: number;   // 星期筛选 (0=周日 1=周一 ... 6=周六)
 }
 
 export class VodService {
@@ -46,12 +59,22 @@ export class VodService {
     const conditions: string[] = [];
     const params: any[] = [];
 
-    // 默认只查已审 (status=1)，管理员可传 -1 查全部
+    // 默认只查已审 (status=1)，管理员传 -1 查全部
     if (opts.status !== undefined && opts.status !== -1) {
       conditions.push('v.vod_status = ?');
       params.push(opts.status);
     } else if (opts.status === undefined) {
       conditions.push('v.vod_status = 1');
+    }
+
+    if (opts.lock !== undefined && opts.lock !== -1) {
+      conditions.push('v.vod_lock = ?');
+      params.push(opts.lock);
+    }
+
+    if (opts.level !== undefined && opts.level > 0) {
+      conditions.push('v.vod_level = ?');
+      params.push(opts.level);
     }
 
     if (opts.ids && opts.ids.length > 0) {
@@ -61,7 +84,6 @@ export class VodService {
     }
 
     if (opts.typeId && opts.typeId > 0) {
-      // 包含当前分类或顶级分类关联
       conditions.push('(v.type_id = ? OR v.type_id_1 = ?)');
       params.push(opts.typeId, opts.typeId);
     } else if (opts.typePid && opts.typePid > 0) {
@@ -84,7 +106,6 @@ export class VodService {
       params.push(opts.letter.trim().toUpperCase());
     }
 
-    // 海螺主题筛选维度：类型/语言/版本/资源/标签
     if (opts.vodClass && opts.vodClass.trim()) {
       conditions.push('v.vod_class LIKE ?');
       params.push(`%${opts.vodClass.trim()}%`);
@@ -138,8 +159,7 @@ export class VodService {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // 排序字段映射
-    let sortColumn = 'v.vod_time';
+    let sortColumn = 'vod_time';
     switch (opts.by) {
       case 'hits': sortColumn = 'vod_hits'; break;
       case 'hits_day': sortColumn = 'vod_hits_day'; break;
@@ -148,19 +168,18 @@ export class VodService {
       case 'score': sortColumn = 'vod_score'; break;
       case 'id': sortColumn = 'vod_id'; break;
       case 'time_add': sortColumn = 'vod_time_add'; break;
+      case 'level': sortColumn = 'vod_level'; break;
       case 'rand': sortColumn = 'RANDOM()'; break;
       default: sortColumn = 'vod_time';
     }
 
     const sortDir = opts.order?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
-    // 查总数
     const countSql = `SELECT COUNT(*) as count FROM vod v ${whereClause}`;
     const countResult = await db.prepare(countSql).bind(...params).first<{ count: number }>();
     const total = countResult?.count || 0;
     const pagecount = Math.ceil(total / limit);
 
-    // 查分页数据
     const orderExpr = sortColumn === 'RANDOM()' ? 'RANDOM()' : `v.${sortColumn}`;
     const dataSql = `
       SELECT v.*, t.type_name
@@ -182,12 +201,12 @@ export class VodService {
   }
 
   /**
-   * 根据 ID 查询视频详情，并返回结构化的播放列表
+   * 根据 ID 查询视频详情，并返回结构化的播放列表，同时更新周期点击量
    */
   static async getVodDetail(
     db: D1Database,
     vodId: number
-  ): Promise<(VodItem & { play_groups: PlayGroup[] }) | null> {
+  ): Promise<(VodItem & { play_groups: PlayGroup[]; down_groups: PlayGroup[] }) | null> {
     const row = await db
       .prepare(`
         SELECT v.*, t.type_name
@@ -201,8 +220,23 @@ export class VodService {
 
     if (!row) return null;
 
-    // 自增一次点击量
-    db.prepare('UPDATE vod SET vod_hits = vod_hits + 1 WHERE vod_id = ?').bind(vodId).run().catch(() => {});
+    // 自增并更新日/周/月点击量
+    const now = Math.floor(Date.now() / 1000);
+    const lastHitsTime = row.vod_time_hits || 0;
+    const isNewDay = lastHitsTime > 0 && new Date(lastHitsTime * 1000).toDateString() !== new Date(now * 1000).toDateString();
+    const hitsDay = isNewDay ? 1 : (row.vod_hits_day || 0) + 1;
+    const hitsWeek = (row.vod_hits_week || 0) + 1;
+    const hitsMonth = (row.vod_hits_month || 0) + 1;
+
+    db.prepare(`
+      UPDATE vod SET
+        vod_hits = vod_hits + 1,
+        vod_hits_day = ?,
+        vod_hits_week = ?,
+        vod_hits_month = ?,
+        vod_time_hits = ?
+      WHERE vod_id = ?
+    `).bind(hitsDay, hitsWeek, hitsMonth, now, vodId).run().catch(() => {});
 
     const play_groups = MacPlayUrlParser.parse(
       row.vod_play_from,
@@ -211,19 +245,27 @@ export class VodService {
       row.vod_play_note
     );
 
+    const down_groups = MacPlayUrlParser.parse(
+      row.vod_down_from || '',
+      row.vod_down_url || '',
+      row.vod_down_server || '',
+      row.vod_down_note || ''
+    );
+
     return {
       ...row,
       play_groups,
+      down_groups,
     };
   }
 
   /**
-   * 搜索联想提示 (Suggest API)
+   * 搜索联想提示
    */
   static async getSuggestions(db: D1Database, wd: string, limit = 10): Promise<string[]> {
     if (!wd || !wd.trim()) return [];
     const rows = await db
-      .prepare('SELECT vod_name FROM vod WHERE vod_name LIKE ? ORDER BY vod_hits DESC LIMIT ?')
+      .prepare('SELECT vod_name FROM vod WHERE vod_name LIKE ? AND vod_status = 1 ORDER BY vod_hits DESC LIMIT ?')
       .bind(`%${wd.trim()}%`, limit)
       .all<{ vod_name: string }>();
 
@@ -233,13 +275,18 @@ export class VodService {
   /**
    * 获取所有分类树
    */
-  static async getTypes(db: D1Database): Promise<TypeItem[]> {
-    const rows = await db
-      .prepare('SELECT * FROM type WHERE type_status = 1 ORDER BY type_sort ASC, type_id ASC')
-      .all<TypeItem>();
+  static async getTypes(db: D1Database, mid?: number): Promise<TypeItem[]> {
+    let sql = 'SELECT * FROM type WHERE type_status = 1';
+    const params: any[] = [];
+    if (mid !== undefined && mid > 0) {
+      sql += ' AND type_mid = ?';
+      params.push(mid);
+    }
+    sql += ' ORDER BY type_sort ASC, type_id ASC';
+
+    const rows = await db.prepare(sql).bind(...params).all<TypeItem>();
     const all = rows.results || [];
 
-    // 组装父子树状结构
     const topList: TypeItem[] = [];
     const childMap = new Map<number, TypeItem[]>();
 
@@ -262,23 +309,98 @@ export class VodService {
   }
 
   /**
-   * 录入或更新单个视频
+   * 保存或更新分类
+   */
+  static async saveType(db: D1Database, data: Partial<TypeItem>): Promise<number> {
+    if (data.type_id && data.type_id > 0) {
+      await db.prepare(`
+        UPDATE type SET
+          type_name = ?, type_en = ?, type_sort = ?, type_mid = ?, type_pid = ?,
+          type_status = ?, type_tpl = ?, type_tpl_list = ?, type_tpl_detail = ?,
+          type_tpl_play = ?, type_tpl_down = ?, type_title = ?, type_key = ?,
+          type_des = ?, type_logo = ?, type_pic = ?, type_extend = ?
+        WHERE type_id = ?
+      `).bind(
+        data.type_name || '',
+        data.type_en || '',
+        data.type_sort || 0,
+        data.type_mid || 1,
+        data.type_pid || 0,
+        data.type_status !== undefined ? data.type_status : 1,
+        data.type_tpl || '',
+        data.type_tpl_list || '',
+        data.type_tpl_detail || '',
+        data.type_tpl_play || '',
+        data.type_tpl_down || '',
+        data.type_title || '',
+        data.type_key || '',
+        data.type_des || '',
+        data.type_logo || '',
+        data.type_pic || '',
+        data.type_extend || '',
+        data.type_id
+      ).run();
+      return data.type_id;
+    } else {
+      const res = await db.prepare(`
+        INSERT INTO type (
+          type_name, type_en, type_sort, type_mid, type_pid, type_status,
+          type_tpl, type_tpl_list, type_tpl_detail, type_tpl_play, type_tpl_down,
+          type_title, type_key, type_des, type_logo, type_pic, type_extend
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        data.type_name || '',
+        data.type_en || '',
+        data.type_sort || 0,
+        data.type_mid || 1,
+        data.type_pid || 0,
+        data.type_status !== undefined ? data.type_status : 1,
+        data.type_tpl || '',
+        data.type_tpl_list || '',
+        data.type_tpl_detail || '',
+        data.type_tpl_play || '',
+        data.type_tpl_down || '',
+        data.type_title || '',
+        data.type_key || '',
+        data.type_des || '',
+        data.type_logo || '',
+        data.type_pic || '',
+        data.type_extend || ''
+      ).run();
+      return Number(res.meta.last_row_id);
+    }
+  }
+
+  static async deleteType(db: D1Database, typeId: number): Promise<boolean> {
+    await db.prepare('DELETE FROM type WHERE type_id = ?').bind(typeId).run();
+    return true;
+  }
+
+  /**
+   * 录入或更新单个视频 (持久化全部 30+ 项业务字段)
    */
   static async saveVod(db: D1Database, data: Partial<VodItem>): Promise<number> {
     const now = Math.floor(Date.now() / 1000);
     const letter = data.vod_letter || MacPlayUrlParser.getFirstLetter(data.vod_name || '');
 
     if (data.vod_id && data.vod_id > 0) {
-      // 更新已存在影片
       await db
         .prepare(`
           UPDATE vod SET
             type_id = ?, type_id_1 = ?, vod_name = ?, vod_sub = ?, vod_en = ?,
-            vod_status = ?, vod_letter = ?, vod_tag = ?, vod_class = ?, vod_pic = ?,
-            vod_actor = ?, vod_director = ?, vod_blurb = ?, vod_remarks = ?,
-            vod_pubdate = ?, vod_area = ?, vod_lang = ?, vod_year = ?, vod_content = ?,
-            vod_douban_score = ?, vod_score = ?, vod_isend = ?, vod_time = ?,
-            vod_play_from = ?, vod_play_server = ?, vod_play_note = ?, vod_play_url = ?
+            vod_status = ?, vod_letter = ?, vod_color = ?, vod_tag = ?, vod_class = ?,
+            vod_pic = ?, vod_pic_thumb = ?, vod_pic_slide = ?, vod_pic_screenshot = ?,
+            vod_actor = ?, vod_director = ?, vod_writer = ?, vod_behind = ?,
+            vod_blurb = ?, vod_remarks = ?, vod_pubdate = ?, vod_total = ?, vod_serial = ?,
+            vod_tv = ?, vod_weekday = ?, vod_area = ?, vod_lang = ?, vod_year = ?,
+            vod_version = ?, vod_state = ?, vod_duration = ?, vod_author = ?, vod_jumpurl = ?,
+            vod_tpl = ?, vod_tpl_play = ?, vod_tpl_down = ?, vod_isend = ?, vod_lock = ?,
+            vod_level = ?, vod_copyright = ?, group_id = ?, vod_points = ?, vod_points_play = ?,
+            vod_points_down = ?, vod_trysee = ?, vod_pwd = ?, vod_pwd_play = ?, vod_pwd_down = ?,
+            vod_content = ?, vod_douban_id = ?, vod_douban_score = ?, vod_score = ?,
+            vod_time = ?, vod_play_from = ?, vod_play_server = ?, vod_play_note = ?, vod_play_url = ?,
+            vod_down_from = ?, vod_down_server = ?, vod_down_note = ?, vod_down_url = ?,
+            vod_plot = ?, vod_plot_name = ?, vod_plot_detail = ?, vod_rel_vod = ?, vod_rel_art = ?
           WHERE vod_id = ?
         `)
         .bind(
@@ -289,41 +411,99 @@ export class VodService {
           data.vod_en || '',
           data.vod_status !== undefined ? data.vod_status : 1,
           letter,
+          data.vod_color || '',
           data.vod_tag || '',
           data.vod_class || '',
           data.vod_pic || '',
+          data.vod_pic_thumb || '',
+          data.vod_pic_slide || '',
+          data.vod_pic_screenshot || '',
           data.vod_actor || '',
           data.vod_director || '',
+          data.vod_writer || '',
+          data.vod_behind || '',
           data.vod_blurb || '',
           data.vod_remarks || '',
           data.vod_pubdate || '',
+          data.vod_total || 0,
+          data.vod_serial || '',
+          data.vod_tv || '',
+          data.vod_weekday || 0,
           data.vod_area || '',
           data.vod_lang || '',
           data.vod_year || '',
+          data.vod_version || '',
+          data.vod_state || '',
+          data.vod_duration || '',
+          data.vod_author || '',
+          data.vod_jumpurl || '',
+          data.vod_tpl || '',
+          data.vod_tpl_play || '',
+          data.vod_tpl_down || '',
+          data.vod_isend || 0,
+          data.vod_lock || 0,
+          data.vod_level || 0,
+          data.vod_copyright || 0,
+          data.group_id || 0,
+          data.vod_points || 0,
+          data.vod_points_play || 0,
+          data.vod_points_down || 0,
+          data.vod_trysee || 0,
+          data.vod_pwd || '',
+          data.vod_pwd_play || '',
+          data.vod_pwd_down || '',
           data.vod_content || '',
+          data.vod_douban_id || 0,
           data.vod_douban_score || 0.0,
           data.vod_score || 9.0,
-          data.vod_isend || 0,
           now,
           data.vod_play_from || '',
           data.vod_play_server || '',
           data.vod_play_note || '',
           data.vod_play_url || '',
+          data.vod_down_from || '',
+          data.vod_down_server || '',
+          data.vod_down_note || '',
+          data.vod_down_url || '',
+          data.vod_plot || 0,
+          data.vod_plot_name || '',
+          data.vod_plot_detail || '',
+          data.vod_rel_vod || '',
+          data.vod_rel_art || '',
           data.vod_id
         )
         .run();
       return data.vod_id;
     } else {
-      // 插入新记录
       const res = await db
         .prepare(`
           INSERT INTO vod (
             type_id, type_id_1, vod_name, vod_sub, vod_en, vod_status,
-            vod_letter, vod_tag, vod_class, vod_pic, vod_actor, vod_director,
-            vod_blurb, vod_remarks, vod_pubdate, vod_area, vod_lang, vod_year,
-            vod_content, vod_douban_score, vod_score, vod_isend, vod_time, vod_time_add,
-            vod_play_from, vod_play_server, vod_play_note, vod_play_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            vod_letter, vod_color, vod_tag, vod_class, vod_pic, vod_pic_thumb,
+            vod_pic_slide, vod_pic_screenshot, vod_actor, vod_director, vod_writer,
+            vod_behind, vod_blurb, vod_remarks, vod_pubdate, vod_total, vod_serial,
+            vod_tv, vod_weekday, vod_area, vod_lang, vod_year, vod_version, vod_state,
+            vod_duration, vod_author, vod_jumpurl, vod_tpl, vod_tpl_play, vod_tpl_down,
+            vod_isend, vod_lock, vod_level, vod_copyright, group_id, vod_points,
+            vod_points_play, vod_points_down, vod_trysee, vod_pwd, vod_pwd_play, vod_pwd_down,
+            vod_content, vod_douban_id, vod_douban_score, vod_score, vod_time, vod_time_add,
+            vod_play_from, vod_play_server, vod_play_note, vod_play_url,
+            vod_down_from, vod_down_server, vod_down_note, vod_down_url,
+            vod_plot, vod_plot_name, vod_plot_detail, vod_rel_vod, vod_rel_art
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?
+          )
         `)
         .bind(
           data.type_id || 0,
@@ -333,27 +513,66 @@ export class VodService {
           data.vod_en || '',
           data.vod_status !== undefined ? data.vod_status : 1,
           letter,
+          data.vod_color || '',
           data.vod_tag || '',
           data.vod_class || '',
           data.vod_pic || '',
+          data.vod_pic_thumb || '',
+          data.vod_pic_slide || '',
+          data.vod_pic_screenshot || '',
           data.vod_actor || '',
           data.vod_director || '',
+          data.vod_writer || '',
+          data.vod_behind || '',
           data.vod_blurb || '',
           data.vod_remarks || '',
           data.vod_pubdate || '',
+          data.vod_total || 0,
+          data.vod_serial || '',
+          data.vod_tv || '',
+          data.vod_weekday || 0,
           data.vod_area || '',
           data.vod_lang || '',
           data.vod_year || '',
+          data.vod_version || '',
+          data.vod_state || '',
+          data.vod_duration || '',
+          data.vod_author || '',
+          data.vod_jumpurl || '',
+          data.vod_tpl || '',
+          data.vod_tpl_play || '',
+          data.vod_tpl_down || '',
+          data.vod_isend || 0,
+          data.vod_lock || 0,
+          data.vod_level || 0,
+          data.vod_copyright || 0,
+          data.group_id || 0,
+          data.vod_points || 0,
+          data.vod_points_play || 0,
+          data.vod_points_down || 0,
+          data.vod_trysee || 0,
+          data.vod_pwd || '',
+          data.vod_pwd_play || '',
+          data.vod_pwd_down || '',
           data.vod_content || '',
+          data.vod_douban_id || 0,
           data.vod_douban_score || 0.0,
           data.vod_score || 9.0,
-          data.vod_isend || 0,
           now,
           now,
           data.vod_play_from || '',
           data.vod_play_server || '',
           data.vod_play_note || '',
-          data.vod_play_url || ''
+          data.vod_play_url || '',
+          data.vod_down_from || '',
+          data.vod_down_server || '',
+          data.vod_down_note || '',
+          data.vod_down_url || '',
+          data.vod_plot || 0,
+          data.vod_plot_name || '',
+          data.vod_plot_detail || '',
+          data.vod_rel_vod || '',
+          data.vod_rel_art || ''
         )
         .run();
 
@@ -367,6 +586,173 @@ export class VodService {
   static async deleteVod(db: D1Database, vodId: number): Promise<boolean> {
     await db.prepare('DELETE FROM vod WHERE vod_id = ?').bind(vodId).run();
     return true;
+  }
+
+  // ==========================================
+  // MacCMS 批量运维操作函数
+  // ==========================================
+
+  static async batchAuditVods(db: D1Database, ids: number[], status: number): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    const res = await db.prepare(`UPDATE vod SET vod_status = ? WHERE vod_id IN (${placeholders})`).bind(status, ...ids).run();
+    return res.meta.changes;
+  }
+
+  static async batchSetVodLevel(db: D1Database, ids: number[], level: number): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    const res = await db.prepare(`UPDATE vod SET vod_level = ? WHERE vod_id IN (${placeholders})`).bind(level, ...ids).run();
+    return res.meta.changes;
+  }
+
+  static async batchSetVodLock(db: D1Database, ids: number[], lock: number): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    const res = await db.prepare(`UPDATE vod SET vod_lock = ? WHERE vod_id IN (${placeholders})`).bind(lock, ...ids).run();
+    return res.meta.changes;
+  }
+
+  static async batchTransferVodType(db: D1Database, ids: number[], targetTypeId: number): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const typeRow = await db.prepare('SELECT type_pid FROM type WHERE type_id = ?').bind(targetTypeId).first<{ type_pid: number }>();
+    const typeId1 = typeRow?.type_pid === 0 ? targetTypeId : (typeRow?.type_pid || targetTypeId);
+    const placeholders = ids.map(() => '?').join(',');
+    const res = await db.prepare(`UPDATE vod SET type_id = ?, type_id_1 = ? WHERE vod_id IN (${placeholders})`).bind(targetTypeId, typeId1, ...ids).run();
+    return res.meta.changes;
+  }
+
+  static async batchDeleteVods(db: D1Database, ids: number[]): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    const res = await db.prepare(`DELETE FROM vod WHERE vod_id IN (${placeholders})`).bind(...ids).run();
+    return res.meta.changes;
+  }
+
+  // ==========================================
+  // MacCMS 重名检测与合并
+  // ==========================================
+
+  static async checkRepeatVods(db: D1Database): Promise<{ name: string; count: number; ids: number[] }[]> {
+    const rows = await db.prepare(`
+      SELECT vod_name, COUNT(*) as c, GROUP_CONCAT(vod_id) as id_list
+      FROM vod
+      GROUP BY vod_name
+      HAVING c > 1
+      ORDER BY c DESC
+      LIMIT 100
+    `).all<{ vod_name: string; c: number; id_list: string }>();
+
+    return (rows.results || []).map(r => ({
+      name: r.vod_name,
+      count: r.c,
+      ids: (r.id_list || '').split(',').map(Number).filter(Boolean),
+    }));
+  }
+
+  static async mergeRepeatVods(db: D1Database, masterId: number, targetIds: number[]): Promise<{ merged: number }> {
+    const master = await db.prepare('SELECT * FROM vod WHERE vod_id = ?').bind(masterId).first<VodItem>();
+    if (!master) throw new Error('主视频不存在');
+
+    let currentGroups = MacPlayUrlParser.parse(
+      master.vod_play_from,
+      master.vod_play_url,
+      master.vod_play_server,
+      master.vod_play_note
+    );
+
+    const validTargetIds = targetIds.filter(id => id !== masterId);
+    if (validTargetIds.length === 0) return { merged: 0 };
+
+    const placeholders = validTargetIds.map(() => '?').join(',');
+    const targetRows = await db.prepare(`SELECT * FROM vod WHERE vod_id IN (${placeholders})`).bind(...validTargetIds).all<VodItem>();
+
+    for (const t of targetRows.results || []) {
+      const targetGroups = MacPlayUrlParser.parse(
+        t.vod_play_from,
+        t.vod_play_url,
+        t.vod_play_server,
+        t.vod_play_note
+      );
+      currentGroups = MacPlayUrlParser.mergeGroups(currentGroups, targetGroups);
+    }
+
+    const serialized = MacPlayUrlParser.serialize(currentGroups);
+    const now = Math.floor(Date.now() / 1000);
+
+    await db.prepare(`
+      UPDATE vod SET
+        vod_play_from = ?,
+        vod_play_server = ?,
+        vod_play_note = ?,
+        vod_play_url = ?,
+        vod_time = ?
+      WHERE vod_id = ?
+    `).bind(
+      serialized.vod_play_from,
+      serialized.vod_play_server,
+      serialized.vod_play_note,
+      serialized.vod_play_url,
+      now,
+      masterId
+    ).run();
+
+    await db.prepare(`DELETE FROM vod WHERE vod_id IN (${placeholders})`).bind(...validTargetIds).run();
+    return { merged: validTargetIds.length };
+  }
+
+  // ==========================================
+  // MacCMS 数据库全局字符批量替换
+  // ==========================================
+
+  static async replaceDatabaseString(
+    db: D1Database,
+    table: string,
+    column: string,
+    searchStr: string,
+    replaceStr: string
+  ): Promise<number> {
+    const allowedTables: Record<string, string[]> = {
+      vod: ['vod_name', 'vod_sub', 'vod_actor', 'vod_director', 'vod_writer', 'vod_pic', 'vod_pic_slide', 'vod_blurb', 'vod_content', 'vod_play_url', 'vod_down_url', 'vod_jumpurl'],
+      art: ['art_name', 'art_sub', 'art_pic', 'art_author', 'art_from', 'art_blurb', 'art_content'],
+      topic: ['topic_name', 'topic_pic', 'topic_blurb', 'topic_content'],
+      actor: ['actor_name', 'actor_pic', 'actor_blurb', 'actor_content', 'actor_works'],
+      role: ['role_name', 'role_pic', 'role_content'],
+      player: ['parse_url', 'player_parse2'],
+    };
+
+    if (!allowedTables[table] || !allowedTables[table].includes(column)) {
+      throw new Error(`不允许在表 ${table} 的字段 ${column} 上执行替换`);
+    }
+
+    const sql = `UPDATE ${table} SET ${column} = REPLACE(${column}, ?, ?) WHERE ${column} LIKE ?`;
+    const res = await db.prepare(sql).bind(searchStr, replaceStr, `%${searchStr}%`).run();
+    return res.meta.changes;
+  }
+
+  // ==========================================
+  // 顶/踩 与评分交互
+  // ==========================================
+
+  static async diggVod(db: D1Database, vodId: number, type: 'up' | 'down'): Promise<{ up: number; down: number }> {
+    const col = type === 'up' ? 'vod_up' : 'vod_down';
+    await db.prepare(`UPDATE vod SET ${col} = ${col} + 1 WHERE vod_id = ?`).bind(vodId).run();
+    const row = await db.prepare('SELECT vod_up, vod_down FROM vod WHERE vod_id = ?').bind(vodId).first<{ vod_up: number; vod_down: number }>();
+    return { up: row?.vod_up || 0, down: row?.vod_down || 0 };
+  }
+
+  static async scoreVod(db: D1Database, vodId: number, score: number): Promise<{ score: number; score_num: number }> {
+    const validScore = Math.max(1, Math.min(10, score));
+    await db.prepare(`
+      UPDATE vod SET
+        vod_score_all = vod_score_all + ?,
+        vod_score_num = vod_score_num + 1,
+        vod_score = ROUND((vod_score_all + ?) / (vod_score_num + 1), 1)
+      WHERE vod_id = ?
+    `).bind(validScore, validScore, vodId).run();
+
+    const row = await db.prepare('SELECT vod_score, vod_score_num FROM vod WHERE vod_id = ?').bind(vodId).first<{ vod_score: number; vod_score_num: number }>();
+    return { score: row?.vod_score || 9.0, score_num: row?.vod_score_num || 1 };
   }
 
   /**
@@ -394,9 +780,16 @@ export class VodService {
   /**
    * 获取巨幕轮播推荐视频 (Banner Spotlight)
    */
-  static async getBannerVods(db: D1Database, limit = 5): Promise<VodItem[]> {
+  static async getBannerVods(db: D1Database, limit = 9): Promise<VodItem[]> {
     const rows = await db
-      .prepare('SELECT v.*, t.type_name FROM vod v LEFT JOIN type t ON v.type_id = t.type_id WHERE v.vod_status = 1 ORDER BY v.vod_hits DESC, v.vod_time DESC LIMIT ?')
+      .prepare(`
+        SELECT v.*, t.type_name
+        FROM vod v
+        LEFT JOIN type t ON v.type_id = t.type_id
+        WHERE v.vod_status = 1
+        ORDER BY v.vod_level DESC, v.vod_hits DESC, v.vod_time DESC
+        LIMIT ?
+      `)
       .bind(limit)
       .all<VodItem>();
     return rows.results || [];
@@ -411,7 +804,7 @@ export class VodService {
     topScore: VodItem[];
   }> {
     const [hotToday, hotWeek, topScore] = await Promise.all([
-      db.prepare('SELECT vod_id, vod_name, vod_pic, vod_remarks, vod_hits, vod_score, vod_douban_score FROM vod WHERE vod_status = 1 ORDER BY vod_hits DESC LIMIT ?').bind(limit).all<VodItem>(),
+      db.prepare('SELECT vod_id, vod_name, vod_pic, vod_remarks, vod_hits, vod_score, vod_douban_score FROM vod WHERE vod_status = 1 ORDER BY vod_hits_day DESC, vod_hits DESC LIMIT ?').bind(limit).all<VodItem>(),
       db.prepare('SELECT vod_id, vod_name, vod_pic, vod_remarks, vod_hits, vod_score, vod_douban_score FROM vod WHERE vod_status = 1 ORDER BY vod_hits_week DESC, vod_hits DESC LIMIT ?').bind(limit).all<VodItem>(),
       db.prepare('SELECT vod_id, vod_name, vod_pic, vod_remarks, vod_hits, vod_score, vod_douban_score FROM vod WHERE vod_status = 1 ORDER BY vod_douban_score DESC, vod_score DESC LIMIT ?').bind(limit).all<VodItem>(),
     ]);
@@ -434,12 +827,12 @@ export class VodService {
     const limit = Math.min(50, Math.max(1, opts.limit || 15));
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = ['art_status = 1'];
+    const conditions: string[] = ['a.art_status = 1'];
     const params: any[] = [];
 
     if (opts.typeId && opts.typeId > 0) {
-      conditions.push('a.type_id = ?');
-      params.push(opts.typeId);
+      conditions.push('(a.type_id = ? OR a.type_id_1 = ?)');
+      params.push(opts.typeId, opts.typeId);
     }
     if (opts.wd && opts.wd.trim()) {
       conditions.push('(a.art_name LIKE ? OR a.art_blurb LIKE ?)');
@@ -478,45 +871,85 @@ export class VodService {
 
   static async saveArt(db: D1Database, data: Partial<ArtItem>): Promise<number> {
     const now = Math.floor(Date.now() / 1000);
+    const letter = data.art_letter || MacPlayUrlParser.getFirstLetter(data.art_name || '');
     if (data.art_id && data.art_id > 0) {
       await db.prepare(`
         UPDATE art SET
-          type_id = ?, art_name = ?, art_sub = ?, art_pic = ?, art_author = ?,
-          art_from = ?, art_blurb = ?, art_content = ?, art_time = ?, art_rel_vod = ?
+          type_id = ?, type_id_1 = ?, group_id = ?, art_name = ?, art_sub = ?, art_en = ?,
+          art_status = ?, art_letter = ?, art_color = ?, art_tag = ?, art_lock = ?,
+          art_level = ?, art_pic = ?, art_pic_thumb = ?, art_pic_slide = ?,
+          art_author = ?, art_from = ?, art_blurb = ?, art_content = ?,
+          art_time = ?, art_rel_vod = ?, art_rel_art = ?, art_pwd = ?, art_points = ?
         WHERE art_id = ?
       `).bind(
         data.type_id || 0,
+        data.type_id_1 || 0,
+        data.group_id || 0,
         data.art_name || '',
         data.art_sub || '',
+        data.art_en || '',
+        data.art_status !== undefined ? data.art_status : 1,
+        letter,
+        data.art_color || '',
+        data.art_tag || '',
+        data.art_lock || 0,
+        data.art_level || 0,
         data.art_pic || '',
+        data.art_pic_thumb || '',
+        data.art_pic_slide || '',
         data.art_author || '官方编辑',
         data.art_from || '本站原创',
         data.art_blurb || '',
         data.art_content || '',
         now,
         data.art_rel_vod || '',
+        data.art_rel_art || '',
+        data.art_pwd || '',
+        data.art_points || 0,
         data.art_id
       ).run();
       return data.art_id;
     } else {
       const res = await db.prepare(`
         INSERT INTO art (
-          type_id, art_name, art_sub, art_en, art_pic, art_author, art_from,
-          art_blurb, art_content, art_hits, art_time, art_time_add, art_rel_vod
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+          type_id, type_id_1, group_id, art_name, art_sub, art_en, art_status,
+          art_letter, art_color, art_tag, art_lock, art_level, art_pic,
+          art_pic_thumb, art_pic_slide, art_author, art_from, art_blurb,
+          art_content, art_hits, art_time, art_time_add, art_rel_vod,
+          art_rel_art, art_pwd, art_points
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, 0, ?, ?, ?,
+          ?, ?, ?
+        )
       `).bind(
         data.type_id || 0,
+        data.type_id_1 || 0,
+        data.group_id || 0,
         data.art_name || '',
         data.art_sub || '',
         data.art_en || '',
+        data.art_status !== undefined ? data.art_status : 1,
+        letter,
+        data.art_color || '',
+        data.art_tag || '',
+        data.art_lock || 0,
+        data.art_level || 0,
         data.art_pic || '',
+        data.art_pic_thumb || '',
+        data.art_pic_slide || '',
         data.art_author || '官方编辑',
         data.art_from || '本站原创',
         data.art_blurb || '',
         data.art_content || '',
         now,
         now,
-        data.art_rel_vod || ''
+        data.art_rel_vod || '',
+        data.art_rel_art || '',
+        data.art_pwd || '',
+        data.art_points || 0
       ).run();
       return Number(res.meta.last_row_id);
     }
@@ -557,6 +990,86 @@ export class VodService {
     };
   }
 
+  static async saveTopic(db: D1Database, data: Partial<TopicItem>): Promise<number> {
+    const now = Math.floor(Date.now() / 1000);
+    const letter = data.topic_letter || MacPlayUrlParser.getFirstLetter(data.topic_name || '');
+
+    if (data.topic_id && data.topic_id > 0) {
+      await db.prepare(`
+        UPDATE topic SET
+          topic_name = ?, topic_sub = ?, topic_en = ?, topic_letter = ?, topic_color = ?,
+          topic_tpl = ?, topic_pic = ?, topic_pic_thumb = ?, topic_pic_slide = ?,
+          topic_blurb = ?, topic_content = ?, topic_status = ?, topic_sort = ?,
+          topic_level = ?, topic_rel_vod = ?, topic_rel_art = ?, topic_extend = ?,
+          topic_time = ?
+        WHERE topic_id = ?
+      `).bind(
+        data.topic_name || '',
+        data.topic_sub || '',
+        data.topic_en || '',
+        letter,
+        data.topic_color || '',
+        data.topic_tpl || '',
+        data.topic_pic || '',
+        data.topic_pic_thumb || '',
+        data.topic_pic_slide || '',
+        data.topic_blurb || '',
+        data.topic_content || '',
+        data.topic_status !== undefined ? data.topic_status : 1,
+        data.topic_sort || 0,
+        data.topic_level || 0,
+        data.topic_rel_vod || '',
+        data.topic_rel_art || '',
+        data.topic_extend || '',
+        now,
+        data.topic_id
+      ).run();
+      return data.topic_id;
+    } else {
+      const res = await db.prepare(`
+        INSERT INTO topic (
+          topic_name, topic_sub, topic_en, topic_letter, topic_color,
+          topic_tpl, topic_pic, topic_pic_thumb, topic_pic_slide,
+          topic_blurb, topic_content, topic_status, topic_sort,
+          topic_level, topic_rel_vod, topic_rel_art, topic_extend,
+          topic_time, topic_time_add
+        ) VALUES (
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?
+        )
+      `).bind(
+        data.topic_name || '',
+        data.topic_sub || '',
+        data.topic_en || '',
+        letter,
+        data.topic_color || '',
+        data.topic_tpl || '',
+        data.topic_pic || '',
+        data.topic_pic_thumb || '',
+        data.topic_pic_slide || '',
+        data.topic_blurb || '',
+        data.topic_content || '',
+        data.topic_status !== undefined ? data.topic_status : 1,
+        data.topic_sort || 0,
+        data.topic_level || 0,
+        data.topic_rel_vod || '',
+        data.topic_rel_art || '',
+        data.topic_extend || '',
+        now,
+        now
+      ).run();
+      return Number(res.meta.last_row_id);
+    }
+  }
+
+  static async deleteTopic(db: D1Database, id: number): Promise<boolean> {
+    await db.prepare('DELETE FROM topic WHERE topic_id = ?').bind(id).run();
+    return true;
+  }
+
   // ==========================================
   // 用户互动评论与留言 (Comment)
   // ==========================================
@@ -568,15 +1081,15 @@ export class VodService {
     return rows.results || [];
   }
 
-  static async addComment(db: D1Database, data: { mid: number; rid: number; name?: string; content: string }): Promise<number> {
+  static async addComment(db: D1Database, data: { mid: number; rid: number; pid?: number; userId?: number; name?: string; ip?: string; content: string }): Promise<number> {
     const now = Math.floor(Date.now() / 1000);
     const name = (data.name || '').trim() || '热心影迷';
     const content = (data.content || '').trim();
     if (!content) throw new Error('评论内容不能为空');
 
     const res = await db
-      .prepare('INSERT INTO comment (comment_mid, comment_rid, comment_name, comment_content, comment_time, comment_status) VALUES (?, ?, ?, ?, ?, 1)')
-      .bind(data.mid, data.rid, name, content, now)
+      .prepare('INSERT INTO comment (comment_mid, comment_rid, comment_pid, user_id, comment_name, comment_ip, comment_content, comment_time, comment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
+      .bind(data.mid, data.rid, data.pid || 0, data.userId || 0, name, data.ip || '', content, now)
       .run();
     return Number(res.meta.last_row_id);
   }
@@ -589,11 +1102,149 @@ export class VodService {
     return rows.results || [];
   }
 
+  static async saveLink(db: D1Database, data: Partial<LinkItem>): Promise<number> {
+    if (data.link_id && data.link_id > 0) {
+      await db.prepare(`
+        UPDATE link SET
+          link_name = ?, link_url = ?, link_logo = ?, link_type = ?, link_sort = ?, link_status = ?
+        WHERE link_id = ?
+      `).bind(
+        data.link_name || '',
+        data.link_url || '',
+        data.link_logo || '',
+        data.link_type || 0,
+        data.link_sort || 0,
+        data.link_status !== undefined ? data.link_status : 1,
+        data.link_id
+      ).run();
+      return data.link_id;
+    } else {
+      const res = await db.prepare(`
+        INSERT INTO link (link_name, link_url, link_logo, link_type, link_sort, link_status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(
+        data.link_name || '',
+        data.link_url || '',
+        data.link_logo || '',
+        data.link_type || 0,
+        data.link_sort || 0,
+        data.link_status !== undefined ? data.link_status : 1
+      ).run();
+      return Number(res.meta.last_row_id);
+    }
+  }
+
+  static async deleteLink(db: D1Database, id: number): Promise<boolean> {
+    await db.prepare('DELETE FROM link WHERE link_id = ?').bind(id).run();
+    return true;
+  }
+
+  // ==========================================
+  // 播放器、下载器与服务器管理
+  // ==========================================
   static async getPlayers(db: D1Database): Promise<PlayerItem[]> {
     const rows = await db
       .prepare('SELECT * FROM player WHERE status = 1 ORDER BY sort ASC, id ASC')
       .all<PlayerItem>();
     return rows.results || [];
   }
-}
 
+  static async getAllPlayers(db: D1Database): Promise<PlayerItem[]> {
+    const rows = await db.prepare('SELECT * FROM player ORDER BY sort ASC, id ASC').all<PlayerItem>();
+    return rows.results || [];
+  }
+
+  static async savePlayer(db: D1Database, data: Partial<PlayerItem>): Promise<number> {
+    if (data.id && data.id > 0) {
+      await db.prepare(`
+        UPDATE player SET
+          code = ?, name = ?, player_title = ?, parse_url = ?, player_parse2 = ?,
+          player_target = ?, player_content = ?, player_url = ?, status = ?, sort = ?, tip = ?
+        WHERE id = ?
+      `).bind(
+        data.code || '',
+        data.name || '',
+        data.player_title || '',
+        data.parse_url || '',
+        data.player_parse2 || '',
+        data.player_target || '_self',
+        data.player_content || '',
+        data.player_url || '',
+        data.status !== undefined ? data.status : 1,
+        data.sort || 0,
+        data.tip || '',
+        data.id
+      ).run();
+      return data.id;
+    } else {
+      const res = await db.prepare(`
+        INSERT INTO player (
+          code, name, player_title, parse_url, player_parse2, player_target,
+          player_content, player_url, status, sort, tip
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        data.code || '',
+        data.name || '',
+        data.player_title || '',
+        data.parse_url || '',
+        data.player_parse2 || '',
+        data.player_target || '_self',
+        data.player_content || '',
+        data.player_url || '',
+        data.status !== undefined ? data.status : 1,
+        data.sort || 0,
+        data.tip || ''
+      ).run();
+      return Number(res.meta.last_row_id);
+    }
+  }
+
+  static async deletePlayer(db: D1Database, id: number): Promise<boolean> {
+    await db.prepare('DELETE FROM player WHERE id = ?').bind(id).run();
+    return true;
+  }
+
+  static async getDowners(db: D1Database): Promise<DownerItem[]> {
+    const rows = await db.prepare('SELECT * FROM downer ORDER BY sort ASC, id ASC').all<DownerItem>();
+    return rows.results || [];
+  }
+
+  static async saveDowner(db: D1Database, data: Partial<DownerItem>): Promise<number> {
+    if (data.id && data.id > 0) {
+      await db.prepare('UPDATE downer SET code = ?, name = ?, status = ?, sort = ?, tip = ? WHERE id = ?')
+        .bind(data.code || '', data.name || '', data.status !== undefined ? data.status : 1, data.sort || 0, data.tip || '', data.id).run();
+      return data.id;
+    } else {
+      const res = await db.prepare('INSERT INTO downer (code, name, status, sort, tip) VALUES (?, ?, ?, ?, ?)')
+        .bind(data.code || '', data.name || '', data.status !== undefined ? data.status : 1, data.sort || 0, data.tip || '').run();
+      return Number(res.meta.last_row_id);
+    }
+  }
+
+  static async deleteDowner(db: D1Database, id: number): Promise<boolean> {
+    await db.prepare('DELETE FROM downer WHERE id = ?').bind(id).run();
+    return true;
+  }
+
+  static async getServers(db: D1Database): Promise<ServerItem[]> {
+    const rows = await db.prepare('SELECT * FROM server ORDER BY sort ASC, id ASC').all<ServerItem>();
+    return rows.results || [];
+  }
+
+  static async saveServer(db: D1Database, data: Partial<ServerItem>): Promise<number> {
+    if (data.id && data.id > 0) {
+      await db.prepare('UPDATE server SET code = ?, name = ?, status = ?, sort = ?, tip = ? WHERE id = ?')
+        .bind(data.code || '', data.name || '', data.status !== undefined ? data.status : 1, data.sort || 0, data.tip || '', data.id).run();
+      return data.id;
+    } else {
+      const res = await db.prepare('INSERT INTO server (code, name, status, sort, tip) VALUES (?, ?, ?, ?, ?)')
+        .bind(data.code || '', data.name || '', data.status !== undefined ? data.status : 1, data.sort || 0, data.tip || '').run();
+      return Number(res.meta.last_row_id);
+    }
+  }
+
+  static async deleteServer(db: D1Database, id: number): Promise<boolean> {
+    await db.prepare('DELETE FROM server WHERE id = ?').bind(id).run();
+    return true;
+  }
+}

@@ -4,12 +4,18 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { Bindings, CollectNodeItem } from './types';
-import { provideRouter } from './routes/provide';
-import { apiRouter } from './routes/api';
-import { adminRouter } from './routes/admin';
-import { timmingRouter } from './routes/timming';
-import { CollectorService } from './services/collector';
+import type { Bindings, CollectNodeItem } from './types/index.ts';
+import {
+  provideVodRouter,
+  provideArtRouter,
+  provideActorRouter,
+  provideRoleRouter,
+  incApiRouter,
+} from './routes/provide.ts';
+import { apiRouter } from './routes/api.ts';
+import { adminRouter } from './routes/admin.ts';
+import { timmingRouter } from './routes/timming.ts';
+import { CollectorService } from './services/collector.ts';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -21,16 +27,19 @@ app.use('*', cors({
 }));
 
 // 1. 挂载 MacCMS 官方标准对外提供接口
-// 兼容：/api.php/provide/vod/、/api.php/provide/art/ 与 /provide/
-app.route('/api.php/provide/vod', provideRouter);
-app.route('/api.php/provide/art', provideRouter);
-app.route('/api.php/provide', provideRouter);
-app.route('/provide/vod', provideRouter);
-app.route('/provide/art', provideRouter);
-app.route('/provide', provideRouter);
+app.route('/api.php/provide/vod', provideVodRouter);
+app.route('/api.php/provide/art', provideArtRouter);
+app.route('/api.php/provide/actor', provideActorRouter);
+app.route('/api.php/provide/role', provideRoleRouter);
+app.route('/provide/vod', provideVodRouter);
+app.route('/provide/art', provideArtRouter);
+app.route('/provide/actor', provideActorRouter);
+app.route('/provide/role', provideRoleRouter);
+
+// 兼容经典 MacCMS v8 采集接口路径
+app.route('/inc', incApiRouter);
 
 // 2. 挂载定时任务接口
-// 兼容：/api.php/timming/index 与 /api/timming/index
 app.route('/api.php/timming/index', timmingRouter);
 app.route('/api.php/timming', timmingRouter);
 app.route('/api/timming/index', timmingRouter);
@@ -44,7 +53,6 @@ app.route('/api/admin', adminRouter);
 
 // 5. 静态资源与页面回退处理 (Cloudflare Workers Static Assets)
 app.get('*', async (c) => {
-  // 如果配置了 Cloudflare Workers 静态资产绑定 ASSETS
   if (c.env.ASSETS) {
     const url = new URL(c.req.url);
     const pathname = url.pathname;
@@ -78,14 +86,14 @@ export default {
     ctx.waitUntil(
       (async () => {
         try {
-          // 增量同步近 24 小时更新数据
           const nodes = await env.DB
             .prepare('SELECT * FROM collect_node WHERE status = 1')
             .all<CollectNodeItem>();
 
           for (const node of nodes.results || []) {
             try {
-              await CollectorService.runCollectTask(env.DB, node, node.cron_hours || 24, 1);
+              const hours = node.cron_hours !== undefined ? node.cron_hours : 24;
+              await CollectorService.runCollectTask(env.DB, node, hours, 1);
             } catch (err) {
               console.error(`Scheduled ingestion failed for node ${node.name}:`, err);
             }

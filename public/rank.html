@@ -14,46 +14,16 @@
 </head>
 <body class="conch-conchs">
 
-<!-- 顶部导航 (public/head.html) -->
-<div id="conch-header" class="conch-header">
-  <div class="conch-headwrap">
-    <div class="container">
-      <div class="conch-logo">
-        <a class="hl-logo hl-logo-black" href="/" style="background-image: url(/static/theme/img/logo_black.png);"></a>
-        <a class="hl-logo hl-logo-white" href="/" style="background-image: url(/static/theme/img/logo_white.png);"></a>
-      </div>
-      <div class="conch-list conch-content">
-        <ul class="hl-list hl-text-muted clearfix">
-          <li class="hl-list-font hl-hidden-xs"><a href="javascript:;" title="观看记录"><i class="iconfont hl-icon-shijian"></i></a></li>
-          <li class="hl-list-font hl-hidden-xs"><a href="/type.html?by=time" title="最新"><i class="iconfont hl-icon-zuixin"></i></a></li>
-          <li class="hl-list-font hl-hidden-xs"><a href="/rank.html" title="排行"><i class="iconfont hl-icon-paihang"></i></a></li>
-          <li class="hl-list-font hl-hidden-xs"><a href="/admin/index.html" title="后台管理"><i class="iconfont hl-icon-shezhi"></i></a></li>
-        </ul>
-      </div>
-      <div class="conch-search">
-        <div class="hl-search-form">
-          <input type="text" id="searchInput" class="hl-search-text hl-search-wd" placeholder="请输入片名、演员或导演" autocomplete="off">
-          <button class="hl-search-submit" type="button" id="btnSearch"><i class="iconfont hl-icon-sousuo"></i></button>
-        </div>
-        <div class="hl-sh-box" id="suggestBox"></div>
-      </div>
-      <div class="conch-nav">
-        <div class="hl-nav-wrap hl-navswiper">
-          <ul class="hl-nav hl-text-site swiper-wrapper clearfix" id="mainNav"></ul>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+<div id="siteHeader"></div>
 
 <!-- 主体 (对齐 label/rank.html) -->
 <div id="conch-content" class="conch-content">
   <div class="conch-ctwrap-auto">
     <div class="hl-ctwrap-item hl-conch-items">
       <div class="container">
-        <div class="hl-banner-main hl-text-center clearfix">
-          <h1 class="hl-text-white" id="rankTitle">影视排行榜</h1>
-          <span class="hl-text-white">Top 50 排行榜 · 数据实时更新</span>
+        <div class="hl-banner-main hl-text-center clearfix" style="padding:30px 0;">
+          <h1 class="hl-text-white" id="rankTitle" style="font-size:2rem;font-weight:900;margin-bottom:8px;">影视排行榜</h1>
+          <span class="hl-text-white" style="opacity:0.85;">Top 50 排行榜 · 数据实时更新</span>
         </div>
       </div>
     </div>
@@ -75,7 +45,7 @@
 
           <!-- 分类维度子 Tabs -->
           <div class="hl-type-name hl-tabs-swiper hl-bg-subs hl-tabs" style="margin-bottom:14px;border-radius:6px;padding:4px 8px;">
-            <div class="swiper-wrapper" id="rankTypeTabs">
+            <div class="swiper-wrapper" id="rankTypeTabs" style="display:flex;gap:6px;overflow-x:auto;">
               <a class="hl-tabs-btn active" href="javascript:;" data-tid="0">全部</a>
             </div>
           </div>
@@ -90,74 +60,27 @@
   </div>
 </div>
 
-<!-- 页脚 (public/foot.html) -->
-<div id="conch-footer" class="conch-footer">
-  <div class="conch-footwrap hl-bg-subs hl-footnav-show">
-    <div class="container">
-      <div class="hl-footwrap-item">
-        <div class="hl-foot-extra">
-          <ul class="hl-fe-list clearfix">
-            <li class="hl-color-item"><a href="javascript:;" id="skinToggle"><i class="iconfont hl-icon-yueliang"></i><span id="skinText">深色模式</span></a></li>
-            <li class="hl-back-item"><a class="hl-back-top" href="javascript:window.scrollTo({top:0,behavior:'smooth'});"><i class="iconfont hl-icon-jiantoushang"></i><span>返回顶部</span></a></li>
-          </ul>
-        </div>
-        <div class="row">
-          <div class="hl-col-sm-8 hl-col-xs-12">
-            <div class="hl-foot-text hl-text-muted">
-              <p>© 2026 MacCMS Serverless Edition · 海螺影视主题 Conch_M003 · 100% 兼容 MacCMS 8/10 协议</p>
-            </div>
-            <div class="hl-map-nav hl-text-site hl-hidden-xs">
-              <a href="/">返回首页</a><span>—</span>
-              <a href="/type.html">全部分类</a><span>—</span>
-              <a href="/topic.html">影视专题</a><span>—</span>
-              <a href="/art.html">新闻资讯</a><span>—</span>
-              <a href="/admin/index.html">管理后台</a>
-            </div>
-          </div>
-          <div class="hl-col-sm-4 hl-col-xs-12">
-            <div class="hl-foot-logo">
-              <a class="hl-logo hl-bright-0" href="/" style="background-image: url(/static/theme/img/logo_black.png);"></a>
-            </div>
-            <div class="hl-foot-copy hl-text-muted">
-              <p>&copy;&nbsp;2026&nbsp;MacCMS Serverless Edition</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+<div id="siteFooter"></div>
 
 <script src="/static/theme/js/jquery.min.js"></script>
 <script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
 <script>
 var curBy = 'hits';
 var curTypeId = 0;
 
 $(function () {
   Theme.init().then(function () {
-    renderNav();
+    Layout.render('rank');
+    loadTypes();
     bindEvents();
     loadRank();
   });
 });
 
-function renderNav() {
+function loadTypes() {
   API.get('/api/types').then(function (j) {
     var types = j.code === 0 ? j.data : [];
-    var nav = $('#mainNav');
-    nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/">首页</a></li>');
-    var typeIds = (Theme.get('nav.type.PC', '1,2,3,4,5') || '').split(',').map(Number);
-    types.forEach(function (t) {
-      if (typeIds.indexOf(t.type_id) >= 0) {
-        nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/type.html?id=' + t.type_id + '">' + U.esc(t.type_name) + '</a></li>');
-      }
-    });
-    nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/topic.html">专题</a></li>');
-    nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/art.html">资讯</a></li>');
-    nav.append('<li class="hl-nav-item hl-slide-swiper"><a href="/rank.html" class="hl-text-conch active">排行</a></li>');
-
-    // 分类维度子 Tabs
     var subTabs = $('#rankTypeTabs');
     types.forEach(function (t) {
       subTabs.append('<a class="hl-tabs-btn" href="javascript:;" data-tid="' + t.type_id + '">' + U.esc(t.type_name) + '</a>');
@@ -166,7 +89,6 @@ function renderNav() {
 }
 
 function bindEvents() {
-  // 维度切换（总榜/月榜/周榜/评分榜）
   $('#rankTabs').on('click', 'a', function () {
     $('#rankTabs a').removeClass('active');
     $(this).addClass('active');
@@ -174,42 +96,44 @@ function bindEvents() {
     loadRank();
   });
 
-  // 分类子 Tabs
-  $('#rankTypeTabs').on('click', 'a', function () {
-    $('#rankTypeTabs a').removeClass('active');
+  $('#rankTypeTabs').on('click', '.hl-tabs-btn', function () {
+    $('#rankTypeTabs .hl-tabs-btn').removeClass('active');
     $(this).addClass('active');
-    curTypeId = parseInt($(this).data('tid') || '0', 10);
+    curTypeId = parseInt($(this).data('tid'), 10);
     loadRank();
-  });
-
-  // 搜索与皮肤
-  $('#btnSearch').on('click', function () {
-    var kw = $('#searchInput').val().trim();
-    if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
-  });
-  $('#searchInput').on('keydown', function (e) {
-    if (e.key === 'Enter') $('#btnSearch').click();
-  });
-  $('#skinToggle').on('click', function () {
-    Theme.toggleSkin();
-    $('#skinText').text(Theme.get('theme.style.color', '0') === '1' ? '浅色模式' : '深色模式');
   });
 }
 
 function loadRank() {
   var list = $('#rankList');
-  list.html('<li class="hl-loading" style="width:100%;">正在加载排行榜…</li>');
-  var params = { by: curBy, limit: 50 };
+  list.html('<div class="hl-loading">正在载入排行榜…</div>');
+
+  var params = { limit: 50, by: curBy, order: 'desc' };
   if (curTypeId > 0) params.type_id = curTypeId;
 
   API.get('/api/vod/list', params).then(function (j) {
-    if (j.code !== 0 || !j.data || !j.data.list.length) {
-      list.html('<li class="hl-empty" style="width:100%;">暂无榜单数据</li>');
+    if (j.code !== 0 || !j.data || !j.data.list || !j.data.list.length) {
+      list.html('<div class="hl-empty">暂无排行数据</div>');
       return;
     }
     list.html('');
-    j.data.list.forEach(function (v, i) {
-      list.append('<li class="hl-list-item hl-col-xs-12">' + Card.rankItem(v, i + 1) + '</li>');
+    j.data.list.forEach(function (v, idx) {
+      var rankNum = idx + 1;
+      var rankCls = rankNum <= 3 ? ' hl-bg-conch' : '';
+      var val = curBy === 'score' ? (v.vod_score || '9.0') : (v.vod_hits || 0);
+
+      list.append(
+        '<li class="hl-col-xs-12 hl-col-sm-6 hl-col-md-4" style="margin-bottom:12px;">' +
+        '<a href="/detail.html?id=' + v.vod_id + '" class="hl-rank-item" style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--bg-card,#fff);border-radius:8px;border:1px solid var(--bd-color,#eee);">' +
+        '<span class="hl-rank-no' + rankCls + '" style="width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;background:var(--bg-subs,#eee);color:inherit;">' + rankNum + '</span>' +
+        '<div class="hl-rank-pic hl-lazy" data-original="' + U.esc(v.vod_pic || '') + '" style="width:48px;height:64px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;"></div>' +
+        '<div style="flex:1;min-width:0;">' +
+        '<div class="hl-lc-1" style="font-weight:700;font-size:.95rem;">' + U.esc(v.vod_name) + '</div>' +
+        '<div class="hl-lc-1" style="font-size:.8rem;color:var(--tx-mute,#888);margin-top:2px;">' + U.esc(v.vod_remarks || v.vod_actor || '') + '</div>' +
+        '</div>' +
+        '<span style="font-weight:700;font-size:.85rem;color:var(--hl-site,#0099ff);">' + val + (curBy === 'score' ? '分' : '次') + '</span>' +
+        '</a></li>'
+      );
     });
     Interact.lazy(list[0]);
   });

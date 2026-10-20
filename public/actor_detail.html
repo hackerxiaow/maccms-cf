@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>明星档案 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item" style="padding:24px 0;">
+    <!-- 明星档案卡片 -->
+    <div id="actorHero" class="hl-row-box" style="padding:24px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:24px;">
+      <div class="hl-loading">正在载入明星档案…</div>
+    </div>
+
+    <!-- 主演影视作品集合 -->
+    <div class="hl-row-box clearfix">
+      <div class="hl-rb-head clearfix">
+        <h3 class="hl-rb-title" style="font-size:1.2rem;font-weight:800;">代表作品与参演影视</h3>
+        <span class="hl-rb-more hl-text-muted" id="worksCount">共 0 部作品</span>
+      </div>
+      <ul class="hl-one-list clearfix" id="actorVodsList" style="margin-top:14px;"></ul>
+      <div id="actorVodsEmpty" class="hl-empty" style="display:none;padding:40px 0;">暂无关联的参演影视作品</div>
+    </div>
+  </div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+var actorId = parseInt(new URLSearchParams(location.search).get('id') || '0', 10);
+
+$(function () {
+  Theme.init().then(function () {
+    Layout.render('actor');
+    if (!actorId) { location.href = '/actor.html'; return; }
+    loadActorDetail();
+  });
+});
+
+function loadActorDetail() {
+  API.get('/api/actor/detail/' + actorId).then(function (j) {
+    if (j.code !== 0 || !j.data) {
+      $('#actorHero').html('<div class="hl-empty">未找到该明星档案</div>');
+      return;
+    }
+    var a = j.data;
+    document.title = a.actor_name + ' 个人资料与代表作品 - MacCMS 影视';
+
+    var heroHtml =
+      '<div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start;">' +
+      '<div style="width:140px;height:140px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:0 6px 16px rgba(0,0,0,0.15);">' +
+      '<img src="' + U.esc(a.actor_pic || '/static/theme/img/touxiang.png') + '" style="width:100%;height:100%;object-fit:cover;">' +
+      '</div>' +
+      '<div style="flex:1;min-width:240px;">' +
+      '<h1 style="font-size:1.6rem;font-weight:900;margin:0 0 8px;">' + U.esc(a.actor_name) +
+      (a.actor_en ? ' <span style="font-size:1rem;font-weight:400;color:var(--tx-mute,#888);">&nbsp;' + U.esc(a.actor_en) + '</span>' : '') +
+      '</h1>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px 24px;font-size:.9rem;color:var(--tx-mute,#888);margin-bottom:12px;">' +
+      (a.actor_sex ? '<div>性别：<span style="color:var(--tx-main,#333);">' + U.esc(a.actor_sex) + '</span></div>' : '') +
+      (a.actor_area ? '<div>地区：<span style="color:var(--tx-main,#333);">' + U.esc(a.actor_area) + '</span></div>' : '') +
+      (a.actor_birthday ? '<div>生日：<span style="color:var(--tx-main,#333);">' + U.esc(a.actor_birthday) + '</span></div>' : '') +
+      (a.actor_blood ? '<div>血型：<span style="color:var(--tx-main,#333);">' + U.esc(a.actor_blood) + '</span></div>' : '') +
+      (a.actor_starsign ? '<div>星座：<span style="color:var(--tx-main,#333);">' + U.esc(a.actor_starsign) + '</span></div>' : '') +
+      '</div>' +
+      (a.actor_works ? '<div style="font-size:.9rem;margin-bottom:10px;"><strong>代表作：</strong><span class="hl-text-conch">' + U.esc(a.actor_works) + '</span></div>' : '') +
+      '<div style="font-size:.9rem;line-height:1.6;color:var(--tx-main,#444);">' + (a.actor_content || a.actor_blurb || '暂无生平介绍') + '</div>' +
+      '</div>' +
+      '</div>';
+    $('#actorHero').html(heroHtml);
+
+    // 渲染关联影片
+    var vods = a.vods || [];
+    $('#worksCount').text('共 ' + vods.length + ' 部作品');
+    var vList = $('#actorVodsList');
+    vList.html('');
+    if (!vods.length) {
+      $('#actorVodsEmpty').show();
+      return;
+    }
+    $('#actorVodsEmpty').hide();
+    vods.forEach(function (v) {
+      vList.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+    });
+    Interact.lazy(vList[0]);
+  });
+}
+</script>
+</body>
+</html>

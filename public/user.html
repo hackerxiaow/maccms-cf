@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>会员中心 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item" style="padding:24px 0;max-width:860px;">
+    <!-- 未登录面板 (登录与注册 Tab) -->
+    <div id="guestBox" class="hl-row-box" style="padding:24px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+      <div class="hl-rb-head clearfix" style="margin-bottom:16px;">
+        <div class="hl-rb-title hl-site-tabs hl-text-site clearfix" id="authTabs">
+          <a class="active" href="javascript:;" data-tab="login">会员登录</a>
+          <a href="javascript:;" data-tab="register">新用户注册</a>
+        </div>
+      </div>
+
+      <!-- 登录表单 -->
+      <div id="tabLogin" class="auth-tab">
+        <div style="margin-bottom:12px;">
+          <label style="display:block;font-size:.85rem;margin-bottom:4px;">账号 / 用户名</label>
+          <input type="text" id="loginUser" placeholder="请输入用户名" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:.85rem;margin-bottom:4px;">登录密码</label>
+          <input type="password" id="loginPwd" placeholder="请输入密码" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+        </div>
+        <button type="button" class="hl-btn-conch hl-bg-conch" id="btnDoLogin" style="width:100%;padding:11px;font-weight:700;border:none;border-radius:6px;color:#fff;cursor:pointer;">立即登录</button>
+      </div>
+
+      <!-- 注册表单 -->
+      <div id="tabRegister" class="auth-tab" style="display:none;">
+        <div style="margin-bottom:12px;">
+          <label style="display:block;font-size:.85rem;margin-bottom:4px;">设定用户名 (3-20位字符)</label>
+          <input type="text" id="regUser" placeholder="请设置用户名" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block;font-size:.85rem;margin-bottom:4px;">设定密码 (不少于6位)</label>
+          <input type="password" id="regPwd" placeholder="请设置登录密码" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:.85rem;margin-bottom:4px;">个性昵称 (选填)</label>
+          <input type="text" id="regNick" placeholder="热心影迷" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+        </div>
+        <button type="button" class="hl-btn-conch hl-bg-conch" id="btnDoRegister" style="width:100%;padding:11px;font-weight:700;border:none;border-radius:6px;color:#fff;cursor:pointer;">立即注册账号</button>
+      </div>
+    </div>
+
+    <!-- 已登录面板 (用户信息、充值卡密、开通VIP、足迹收藏) -->
+    <div id="userBox" style="display:none;">
+      <!-- 用户资料横幅 -->
+      <div class="hl-row-box" style="padding:24px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:20px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;">
+        <div style="display:flex;align-items:center;gap:16px;">
+          <div style="width:64px;height:64px;border-radius:50%;background:var(--hl-site,#0099ff);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.6rem;font-weight:800;" id="userAvatar">U</div>
+          <div>
+            <h2 style="margin:0 0 4px;font-size:1.3rem;font-weight:800;" id="uNick">影迷用户</h2>
+            <div style="display:flex;gap:10px;font-size:.85rem;color:var(--tx-mute,#888);">
+              <span>等级：<strong style="color:var(--hl-site,#0099ff);" id="uGroup">普通会员</strong></span>
+              <span>剩余积分：<strong style="color:#f59e0b;" id="uPoints">0</strong></span>
+            </div>
+            <div style="font-size:.8rem;color:#888;margin-top:2px;" id="uVipStatus"></div>
+          </div>
+        </div>
+        <button type="button" id="btnLogout" style="padding:6px 16px;border:1px solid #ddd;background:none;border-radius:20px;cursor:pointer;font-size:.85rem;">退出登录</button>
+      </div>
+
+      <!-- 充值与升级板块 -->
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:20px;">
+        <h3 style="margin:0 0 14px;font-size:1.1rem;font-weight:700;">充值卡密与开通 VIP</h3>
+        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+          <input type="text" id="cardNo" placeholder="充值卡号" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+          <input type="text" id="cardPwd" placeholder="充值卡密" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+          <button type="button" id="btnRedeem" style="padding:8px 20px;background:var(--hl-site,#0099ff);color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;">立即充值</button>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button type="button" class="vip-btn" data-type="day" style="padding:8px 14px;border:1px solid var(--bd-color,#eee);border-radius:6px;background:var(--bg-subs,#f8fafc);cursor:pointer;">日度 VIP (10积分)</button>
+          <button type="button" class="vip-btn" data-type="week" style="padding:8px 14px;border:1px solid var(--bd-color,#eee);border-radius:6px;background:var(--bg-subs,#f8fafc);cursor:pointer;">周度 VIP (50积分)</button>
+          <button type="button" class="vip-btn" data-type="month" style="padding:8px 14px;border:1px solid var(--hl-site,#0099ff);border-radius:6px;background:var(--hl-site,#0099ff);color:#fff;font-weight:700;cursor:pointer;">月度 VIP (180积分)</button>
+          <button type="button" class="vip-btn" data-type="year" style="padding:8px 14px;border:1px solid var(--bd-color,#eee);border-radius:6px;background:var(--bg-subs,#f8fafc);cursor:pointer;">年度 VIP (1800积分)</button>
+        </div>
+      </div>
+
+      <!-- 足迹与收藏夹 -->
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+        <div class="hl-rb-head clearfix" style="margin-bottom:12px;">
+          <div class="hl-rb-title hl-site-tabs hl-text-site clearfix" id="logTabs">
+            <a class="active" href="javascript:;" data-type="history">播放历史</a>
+            <a href="javascript:;" data-type="fav">我的收藏</a>
+          </div>
+        </div>
+        <ul class="hl-one-list clearfix" id="logList"></ul>
+        <div id="logEmpty" class="hl-empty" style="display:none;padding:30px 0;">暂无记录</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+var USER_TOKEN_KEY = 'maccms_user_token';
+var token = localStorage.getItem(USER_TOKEN_KEY) || '';
+var currentLogType = 'history';
+
+$(function () {
+  Theme.init().then(function () {
+    Layout.render('user');
+    checkAuthState();
+    bindEvents();
+  });
+});
+
+function checkAuthState() {
+  token = localStorage.getItem(USER_TOKEN_KEY) || '';
+  if (!token) {
+    $('#guestBox').show();
+    $('#userBox').hide();
+    return;
+  }
+
+  fetch('/api/user/profile', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j.code === 0 && j.data) {
+      $('#guestBox').hide();
+      $('#userBox').show();
+      renderProfile(j.data);
+      loadLogs();
+    } else {
+      localStorage.removeItem(USER_TOKEN_KEY);
+      $('#guestBox').show();
+      $('#userBox').hide();
+    }
+  }).catch(function () {
+    $('#guestBox').show();
+    $('#userBox').hide();
+  });
+}
+
+function renderProfile(u) {
+  $('#uNick').text(u.user_nick || u.user_name);
+  $('#userAvatar').text((u.user_nick || u.user_name).charAt(0).toUpperCase());
+  $('#uGroup').text(u.group_name || '普通会员');
+  $('#uPoints').text(u.user_points || 0);
+
+  var now = Math.floor(Date.now() / 1000);
+  if (u.user_end_time && u.user_end_time > now) {
+    $('#uVipStatus').html('<span style="color:#10b981;font-weight:700;">VIP 有效期至：' + new Date(u.user_end_time * 1000).toLocaleDateString() + '</span>');
+  } else {
+    $('#uVipStatus').text('未开通 VIP 影视特权');
+  }
+}
+
+function bindEvents() {
+  $('#authTabs a').on('click', function () {
+    $('#authTabs a').removeClass('active');
+    $(this).addClass('active');
+    var tab = $(this).data('tab');
+    if (tab === 'login') {
+      $('#tabLogin').show();
+      $('#tabRegister').hide();
+    } else {
+      $('#tabLogin').hide();
+      $('#tabRegister').show();
+    }
+  });
+
+  $('#btnDoLogin').on('click', function () {
+    var u = $('#loginUser').val().trim();
+    var p = $('#loginPwd').val().trim();
+    if (!u || !p) { alert('请输入账号与密码'); return; }
+
+    API.post('/api/user/login', { username: u, password: p }).then(function (j) {
+      if (j.code === 0) {
+        localStorage.setItem(USER_TOKEN_KEY, j.data.token);
+        checkAuthState();
+      } else {
+        alert(j.msg || '登录失败');
+      }
+    });
+  });
+
+  $('#btnDoRegister').on('click', function () {
+    var u = $('#regUser').val().trim();
+    var p = $('#regPwd').val().trim();
+    var n = $('#regNick').val().trim();
+    if (!u || !p) { alert('请输入用户名与密码'); return; }
+
+    API.post('/api/user/register', { username: u, password: p, nick: n }).then(function (j) {
+      if (j.code === 0) {
+        localStorage.setItem(USER_TOKEN_KEY, j.data.token);
+        alert('恭喜您注册成功！已为您自动登录并赠送初始积分。');
+        checkAuthState();
+      } else {
+        alert(j.msg || '注册失败');
+      }
+    });
+  });
+
+  $('#btnLogout').on('click', function () {
+    localStorage.removeItem(USER_TOKEN_KEY);
+    checkAuthState();
+  });
+
+  $('#btnRedeem').on('click', function () {
+    var no = $('#cardNo').val().trim();
+    var pwd = $('#cardPwd').val().trim();
+    if (!no || !pwd) { alert('请输入卡号与卡密'); return; }
+
+    fetch('/api/user/redeem_card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ card_no: no, card_pwd: pwd })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.code === 0) {
+        alert(j.msg);
+        $('#cardNo').val('');
+        $('#cardPwd').val('');
+        checkAuthState();
+      } else {
+        alert(j.msg || '充值失败');
+      }
+    });
+  });
+
+  $('.vip-btn').on('click', function () {
+    var type = $(this).data('type');
+    if (!confirm('确定消耗积分兑换开通此 VIP 身份吗？')) return;
+
+    fetch('/api/user/buy_vip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ type: type })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.code === 0) {
+        alert(j.msg);
+        checkAuthState();
+      } else {
+        alert(j.msg || '兑换失败');
+      }
+    });
+  });
+
+  $('#logTabs a').on('click', function () {
+    $('#logTabs a').removeClass('active');
+    $(this).addClass('active');
+    currentLogType = $(this).data('type');
+    loadLogs();
+  });
+}
+
+function loadLogs() {
+  var url = currentLogType === 'fav' ? '/api/user/favs' : '/api/user/history';
+  fetch(url, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    var list = $('#logList');
+    list.html('');
+    if (j.code !== 0 || !j.data || !j.data.length) {
+      $('#logEmpty').show();
+      return;
+    }
+    $('#logEmpty').hide();
+    j.data.forEach(function (it) {
+      list.append(
+        '<li class="hl-list-item hl-col-xs-6 hl-col-sm-3 hl-col-md-2" style="margin-bottom:12px;">' +
+        '<a href="/play.html?id=' + it.ulog_rid + '&sid=' + it.ulog_sid + '&nid=' + it.ulog_nid + '" style="text-decoration:none;color:inherit;">' +
+        '<div class="hl-lazy" data-original="' + U.esc(it.target_pic || '') + '" style="width:100%;padding-top:140%;border-radius:6px;background-size:cover;background-position:center;background-color:var(--bg-subs,#eee);"></div>' +
+        '<div class="hl-lc-1" style="font-size:.9rem;font-weight:700;margin-top:6px;">' + U.esc(it.target_name || ('视频#' + it.ulog_rid)) + '</div>' +
+        '</a></li>'
+      );
+    });
+    Interact.lazy(list[0]);
+  });
+}
+</script>
+</body>
+</html>

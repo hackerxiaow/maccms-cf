@@ -1,10 +1,11 @@
 // ========================================================
 // 资源站采集引擎服务 (支持 MacCMS XML / JSON 接口与智能合并入库)
+// 支持 urlrole=0/1、vod_lock保护、广告词过滤、多页断点记录
 // ========================================================
 
-import { CollectNodeItem, TypeBindItem, VodItem } from '../types';
-import { MacPlayUrlParser } from '../utils/parser';
-import { MacXmlUtils } from '../utils/xml';
+import type { CollectNodeItem, TypeBindItem, VodItem, CjHistoryItem } from '../types/index.ts';
+import { MacPlayUrlParser } from '../utils/parser.ts';
+import { MacXmlUtils } from '../utils/xml.ts';
 
 export interface IngestResult {
   nodeName: string;
@@ -12,6 +13,9 @@ export interface IngestResult {
   inserted: number;
   updated: number;
   skipped: number;
+  page: number;
+  pagecount: number;
+  total: number;
   messages: string[];
 }
 
@@ -78,10 +82,17 @@ export class CollectorService {
       inserted: 0,
       updated: 0,
       skipped: 0,
+      page,
+      pagecount: 1,
+      total: 0,
       messages: [],
     };
 
-    // 1. 构建请求 URL
+    // 1. 读取系统配置 (urlrole: 1=智能合并, 0=完全覆盖)
+    const configRow = await db.prepare("SELECT value FROM config WHERE key = 'urlrole'").first<{ value: string }>();
+    const urlrole = configRow?.value !== undefined ? configRow.value : '1';
+
+    // 2. 构建请求 URL
     const targetUrl = new URL(node.api_url);
     targetUrl.searchParams.set('ac', 'videolist');
     targetUrl.searchParams.set('pg', String(page));
@@ -106,14 +117,20 @@ export class CollectorService {
     const bodyText = await resp.text();
     let videoList: any[] = [];
 
-    // 2. 识别并解析 XML 或 JSON 响应
+    // 3. 识别并解析 XML 或 JSON 响应，获取分页元数据
     if (node.api_type === 'xml' || bodyText.trim().startsWith('<?xml') || bodyText.includes('<rss')) {
       const parsed = MacXmlUtils.parseRssXml(bodyText);
       videoList = parsed.list;
+      result.page = parsed.page || page;
+      result.pagecount = parsed.pagecount || 1;
+      result.total = parsed.total || videoList.length;
     } else {
       try {
         const json: any = JSON.parse(bodyText);
         videoList = json.list || [];
+        result.page = Number(json.page || page);
+        result.pagecount = Number(json.pagecount || 1);
+        result.total = Number(json.total || videoList.length);
       } catch (e) {
         result.messages.push(`JSON 数据格式解析异常: ${(e as Error).message}`);
         return result;
@@ -126,7 +143,7 @@ export class CollectorService {
       return result;
     }
 
-    // 3. 读取该节点的分类映射配置
+    // 4. 读取该节点的分类映射配置
     const bindRows = await db
       .prepare('SELECT source_type_id, local_type_id FROM type_bind WHERE source_id = ?')
       .bind(node.id)
@@ -139,26 +156,39 @@ export class CollectorService {
     const typeRows = await db.prepare('SELECT type_id, type_pid FROM type').all<{ type_id: number; type_pid: number }>();
     const typePidMap = new Map<number, number>((typeRows.results || []).map(t => [t.type_id, t.type_pid]));
 
+    // 广告词过滤字典
+    const filterWords = (node.filter_word || '')
+      .split(',')
+      .map(w => w.trim())
+      .filter(Boolean);
+
+    const cleanText = (str: string): string => {
+      let s = str || '';
+      for (const w of filterWords) {
+        s = s.replaceAll(w, '');
+      }
+      return s.trim();
+    };
+
     const now = Math.floor(Date.now() / 1000);
 
-    // 4. 逐条处理入库
+    // 5. 逐条处理入库
     for (const item of videoList) {
       const sourceTypeId = Number(item.type_id || item.tid || 0);
       let localTypeId = bindMap.get(sourceTypeId);
 
-      // 如果未做显式绑定，尝试按名字或默认分类匹配
       if (!localTypeId) {
         result.skipped++;
         continue;
       }
 
-      // 计算顶级分类 ID (type_id_1)
       let typeId1 = typePidMap.get(localTypeId) || 0;
       if (typeId1 === 0) {
         typeId1 = localTypeId;
       }
 
-      const vodName = (item.vod_name || item.name || '').trim();
+      const rawVodName = (item.vod_name || item.name || '').trim();
+      const vodName = cleanText(rawVodName);
       if (!vodName) {
         result.skipped++;
         continue;
@@ -172,16 +202,18 @@ export class CollectorService {
         item.vod_play_note || ''
       );
 
-      // 如果指定了播放器过滤
+      // 如果指定了播放器过滤，优先保留匹配的播放器，或重命名首选播放组
       if (node.filter_from && node.filter_from.trim()) {
         const filterKey = node.filter_from.trim().toLowerCase();
-        incomingGroups = incomingGroups.map(g => ({
-          ...g,
-          from: filterKey,
-        }));
+        const matchedGroup = incomingGroups.find(g => g.from.toLowerCase() === filterKey);
+        if (matchedGroup) {
+          incomingGroups = [matchedGroup];
+        } else if (incomingGroups.length > 0) {
+          incomingGroups[0].from = filterKey;
+        }
       }
 
-      // 查询本地是否已存在同名且同分类（或同名）的影片
+      // 查询本地是否已存在同名影片
       const existing = await db
         .prepare('SELECT * FROM vod WHERE vod_name = ? LIMIT 1')
         .bind(vodName)
@@ -206,22 +238,22 @@ export class CollectorService {
             localTypeId,
             typeId1,
             vodName,
-            item.vod_sub || '',
+            cleanText(item.vod_sub || ''),
             item.vod_en || '',
             1,
             letter,
-            item.vod_tag || '',
-            item.vod_class || item.type_name || '',
+            cleanText(item.vod_tag || ''),
+            cleanText(item.vod_class || item.type_name || ''),
             item.vod_pic || item.pic || '',
-            item.vod_actor || item.actor || '',
-            item.vod_director || item.director || '',
-            item.vod_blurb || '',
-            item.vod_remarks || item.note || '',
+            cleanText(item.vod_actor || item.actor || ''),
+            cleanText(item.vod_director || item.director || ''),
+            cleanText(item.vod_blurb || ''),
+            cleanText(item.vod_remarks || item.note || ''),
             item.vod_pubdate || '',
             item.vod_area || item.area || '',
             item.vod_lang || item.lang || '',
             item.vod_year || item.year || '',
-            item.vod_content || item.des || '',
+            cleanText(item.vod_content || item.des || ''),
             parseFloat(item.vod_douban_score || 0),
             parseFloat(item.vod_score || 9.0),
             parseInt(item.vod_isend || item.state || 0, 10),
@@ -236,16 +268,25 @@ export class CollectorService {
 
         result.inserted++;
       } else {
-        // 已存在影片：执行 MacCMS v10 智能合并去重 (urlrole=1)
-        const existingGroups = MacPlayUrlParser.parse(
-          existing.vod_play_from,
-          existing.vod_play_url,
-          existing.vod_play_server,
-          existing.vod_play_note
-        );
+        // 锁定检查：如果影片已锁定 (vod_lock=1)，不覆盖
+        if (existing.vod_lock === 1) {
+          result.skipped++;
+          continue;
+        }
 
-        const mergedGroups = MacPlayUrlParser.mergeGroups(existingGroups, incomingGroups);
-        const serialized = MacPlayUrlParser.serialize(mergedGroups);
+        // urlrole 处理：1=智能合并去重, 0=覆盖播放列表
+        let finalGroups = incomingGroups;
+        if (urlrole === '1') {
+          const existingGroups = MacPlayUrlParser.parse(
+            existing.vod_play_from,
+            existing.vod_play_url,
+            existing.vod_play_server,
+            existing.vod_play_note
+          );
+          finalGroups = MacPlayUrlParser.mergeGroups(existingGroups, incomingGroups);
+        }
+
+        const serialized = MacPlayUrlParser.serialize(finalGroups);
 
         await db
           .prepare(`
@@ -259,7 +300,7 @@ export class CollectorService {
             WHERE vod_id = ?
           `)
           .bind(
-            item.vod_remarks || item.note || existing.vod_remarks,
+            cleanText(item.vod_remarks || item.note || existing.vod_remarks),
             serialized.vod_play_from,
             serialized.vod_play_server,
             serialized.vod_play_note,
@@ -276,7 +317,15 @@ export class CollectorService {
     // 更新最后采集运行时间戳
     await db.prepare('UPDATE collect_node SET last_run_time = ? WHERE id = ?').bind(now, node.id).run();
 
-    result.messages.push(`成功处理 ${videoList.length} 条数据 (新增: ${result.inserted}, 更新: ${result.updated}, 未绑定跳过: ${result.skipped})`);
+    // 更新断点续采记录表 cj_history
+    await db.prepare(`
+      INSERT INTO cj_history (node_id, page, total_page, total_records, last_time, status)
+      VALUES (?, ?, ?, ?, ?, 1)
+    `).bind(node.id, result.page, result.pagecount, result.total, now).run().catch(() => {});
+
+    result.messages.push(
+      `成功处理第 ${result.page}/${result.pagecount} 页数据 (${result.inserted} 新增, ${result.updated} 更新, ${result.skipped} 跳过, 共 ${result.total} 条)`
+    );
     return result;
   }
 }

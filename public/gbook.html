@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>求片留言与反馈 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item" style="padding:24px 0;max-width:860px;">
+    <!-- 提交留言/求片表单卡片 -->
+    <div class="hl-row-box" style="padding:24px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:24px;">
+      <h2 style="font-size:1.3rem;font-weight:800;margin:0 0 16px;">我要求片 / 问题反馈</h2>
+      <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+        <input type="text" id="gbookName" placeholder="您的称呼（默认：热心影迷）" maxlength="20" style="flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+        <input type="text" id="gbookVodName" placeholder="相关影片名称（求片或报错片名）" maxlength="50" style="flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+      </div>
+      <div style="margin-bottom:14px;">
+        <textarea id="gbookContent" rows="4" placeholder="请详细描述您想看的影片名称、年份、主演，或者遇到的播放报错现象…" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;resize:vertical;"></textarea>
+      </div>
+      <div style="text-align:right;">
+        <button type="button" class="hl-btn-conch hl-bg-conch" id="btnSubmitGbook" style="padding:10px 28px;font-weight:700;cursor:pointer;border:none;border-radius:6px;color:#fff;">提交留言反馈</button>
+      </div>
+    </div>
+
+    <!-- 历史留言与官方回复列表 -->
+    <div class="hl-row-box clearfix">
+      <div class="hl-rb-head clearfix">
+        <h3 class="hl-rb-title" style="font-size:1.15rem;font-weight:800;">最新影迷留言与受理回复</h3>
+      </div>
+      <div id="gbookList" style="margin-top:14px;"></div>
+      <div id="gbookEmpty" class="hl-empty" style="display:none;padding:40px 0;">暂无留言记录，来写下第一条吧~</div>
+      <div id="gbookPager" class="hl-page-box" style="margin-top:20px;"></div>
+    </div>
+  </div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+var curPage = parseInt(new URLSearchParams(location.search).get('page') || '1', 10);
+
+$(function () {
+  Theme.init().then(function () {
+    Layout.render('gbook');
+    loadGbooks();
+
+    $('#btnSubmitGbook').on('click', function () {
+      var content = $('#gbookContent').val().trim();
+      if (!content) { alert('请输入留言内容'); return; }
+
+      API.post('/api/gbook/add', {
+        name: $('#gbookName').val().trim() || '热心影迷',
+        vod_name: $('#gbookVodName').val().trim() || '',
+        content: content,
+      }).then(function (j) {
+        if (j.code === 0) {
+          alert('留言提交成功，感谢您的反馈！');
+          $('#gbookContent').val('');
+          $('#gbookVodName').val('');
+          loadGbooks();
+        } else {
+          alert(j.msg || '提交失败');
+        }
+      });
+    });
+  });
+});
+
+function loadGbooks() {
+  var list = $('#gbookList');
+  list.html('<div class="hl-loading">正在载入留言记录…</div>');
+
+  API.get('/api/gbook/list', { page: curPage, limit: 15 }).then(function (j) {
+    if (j.code !== 0 || !j.data || !j.data.list || !j.data.list.length) {
+      list.html('');
+      $('#gbookEmpty').show();
+      $('#gbookPager').html('');
+      return;
+    }
+    $('#gbookEmpty').hide();
+    list.html('');
+
+    j.data.list.forEach(function (g) {
+      var itemHtml =
+        '<div style="background:var(--bg-card,#fff);border:1px solid var(--bd-color,#eee);border-radius:8px;padding:16px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,0.03);">' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:6px;align-items:center;">' +
+        '<span style="font-weight:700;font-size:.95rem;"><i class="iconfont hl-icon-yonghu" style="color:var(--hl-site,#0099ff);margin-right:4px;"></i>' + U.esc(g.gbook_name) + '</span>' +
+        '<span style="font-size:.8rem;color:var(--tx-mute,#888);">' + (g.gbook_time ? new Date(g.gbook_time * 1000).toLocaleString() : '') + '</span>' +
+        '</div>' +
+        (g.vod_name ? '<div style="font-size:.85rem;color:var(--hl-site,#0099ff);margin-bottom:6px;">关联影片：<strong>' + U.esc(g.vod_name) + '</strong>' + (g.play_part ? ' (' + U.esc(g.play_part) + ')' : '') + '</div>' : '') +
+        '<div style="font-size:.95rem;line-height:1.5;margin-bottom:8px;">' + U.esc(g.gbook_content) + '</div>' +
+        (g.gbook_reply ?
+          '<div style="background:var(--bg-subs,#f6f9fc);border-left:3px solid var(--hl-site,#0099ff);padding:8px 12px;border-radius:4px;font-size:.85rem;color:var(--tx-main,#333);margin-top:8px;">' +
+          '<strong style="color:var(--hl-site,#0099ff);">官方回复：</strong>' + U.esc(g.gbook_reply) +
+          (g.gbook_reply_time ? '<span style="float:right;color:#999;font-size:.75rem;">' + new Date(g.gbook_reply_time * 1000).toLocaleString() + '</span>' : '') +
+          '</div>' : '') +
+        '</div>';
+      list.append(itemHtml);
+    });
+
+    $('#gbookPager').html(Card.page(j.data.page, j.data.pagecount, '/gbook.html'));
+  });
+}
+</script>
+</body>
+</html>

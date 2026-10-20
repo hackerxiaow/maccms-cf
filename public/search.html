@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>搜索结果 - MacCMS 影视</title>
+  <title>搜索 - MacCMS 影视</title>
   <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
   <link rel="stylesheet" href="/static/theme/css/style.css">
   <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
@@ -11,32 +11,42 @@
   <link rel="stylesheet" href="/static/theme/css/maccms.css">
 </head>
 <body>
+
 <div id="siteHeader"></div>
 
 <div id="conch-content" class="conch-content">
-  <div class="container hl-ctwrap-item">
-    <div style="padding:20px 0;">
-      <div class="hl-search-form" style="max-width:520px;margin-bottom:18px;">
-        <input type="text" id="searchInput2" class="hl-search-wd" placeholder="请输入片名、演员或导演" value="">
-        <button class="hl-search-submit" type="button" onclick="doSearch(document.getElementById('searchInput2').value)"><i class="iconfont hl-icon-sousuo"></i></button>
+  <div class="container hl-ctwrap-item" style="padding:20px 0;">
+    <!-- 搜索栏 -->
+    <div class="hl-search-panel" style="max-width:680px;margin:10px auto 26px;">
+      <div class="hl-search-form hl-search-big" style="display:flex;background:var(--bg-card,#fff);border:2px solid var(--hl-site,#0099ff);border-radius:28px;padding:4px 6px 4px 18px;align-items:center;">
+        <input type="text" id="searchInput2" placeholder="请输入片名、演员或导演" autocomplete="off" style="flex:1;border:none;background:none;outline:none;font-size:1rem;color:inherit;">
+        <button class="hl-search-submit hl-bg-conch" type="button" onclick="doSearch($('#searchInput2').val())" style="border:none;border-radius:24px;width:44px;height:44px;cursor:pointer;color:#fff;">
+          <i class="iconfont hl-icon-sousuo"></i>
+        </button>
       </div>
+    </div>
 
-      <div class="hl-site-tabs" id="searchTabs">
-        <a href="javascript:;" class="active" data-mid="1">影视</a>
-        <a href="javascript:;" data-mid="2">资讯</a>
-      </div>
-
+    <!-- 搜索类型切换 -->
+    <div class="hl-row-box clearfix">
       <div class="hl-rb-head clearfix">
-        <h2 class="hl-rb-title" id="searchMeta">搜索结果</h2>
+        <div class="hl-rb-title hl-site-tabs hl-text-site clearfix" id="searchTabs">
+          <a class="active" href="javascript:;" data-mid="1">影视内容</a>
+          <a href="javascript:;" data-mid="2">文章资讯</a>
+        </div>
+        <span class="hl-rb-more hl-text-muted" id="searchMeta">正在搜索…</span>
       </div>
 
-      <ul class="hl-vod-list clearfix" id="searchList"></ul>
+      <!-- 搜索结果列表 -->
+      <ul class="hl-one-list clearfix" id="searchList" style="margin-top:14px;"></ul>
 
-      <div class="hl-empty" id="searchEmpty" style="display:none;">
-        没有找到相关内容，换个关键词试试吧
+      <!-- 空结果提示 -->
+      <div id="searchEmpty" class="hl-empty" style="display:none;padding:50px 0;">
+        <i class="iconfont hl-icon-tishi" style="font-size:2.5rem;color:#ccc;display:block;margin-bottom:8px;"></i>
+        抱歉，没有找到相关内容，请尝试更换关键词
       </div>
 
-      <div id="pager"></div>
+      <!-- 分页器 -->
+      <div id="pager" class="hl-page-box" style="margin-top:20px;"></div>
     </div>
   </div>
 </div>
@@ -48,20 +58,28 @@
 <script src="/static/theme/layout.js"></script>
 <script>
 $(function () {
-  Theme.init().then(function () { Layout.render('search');
+  Theme.init().then(function () {
+    Layout.render('search');
 
-    var kw = new URLSearchParams(location.search).get('wd') || '';
-    var searchPage = 1;
-    var searchMid = 1;
+    var searchParams = new URLSearchParams(location.search);
+    var kw = searchParams.get('wd') || '';
+    // 关键修复：从 URL 中解析 page 与 mid，确保翻页与 Tab 切换状态完整保持
+    var searchPage = parseInt(searchParams.get('page') || '1', 10);
+    var searchMid = parseInt(searchParams.get('mid') || '1', 10);
 
     $('#searchInput2').val(kw);
     if (kw) { document.title = kw + ' 搜索结果 - MacCMS 影视'; }
+
+    // 设置初始激活的 Tab
+    $('#searchTabs a').removeClass('active');
+    $('#searchTabs a[data-mid="' + searchMid + '"]').addClass('active');
 
     $('#searchTabs').on('click', 'a', function () {
       $('#searchTabs a').removeClass('active');
       $(this).addClass('active');
       searchMid = parseInt($(this).data('mid'), 10);
       searchPage = 1;
+      history.replaceState(null, '', '/search.html?wd=' + encodeURIComponent(kw) + (searchMid > 1 ? '&mid=' + searchMid : ''));
       doSearchResult();
     });
 
@@ -69,6 +87,8 @@ $(function () {
       var list = $('#searchList');
       if (!kw) { list.html(''); $('#searchEmpty').hide(); $('#searchMeta').text('请输入搜索关键词'); return; }
       list.html('<li class="hl-loading" style="grid-column:1/-1;">正在搜索…</li>');
+
+      var baseUrl = '/search.html?wd=' + encodeURIComponent(kw) + (searchMid > 1 ? '&mid=' + searchMid : '');
 
       if (searchMid === 2) {
         API.get('/api/art/list', { wd: kw, page: searchPage, limit: 15 }).then(function (j) {
@@ -89,7 +109,7 @@ $(function () {
             );
           });
           Interact.lazy(list[0]);
-          $('#pager').html(Card.page(j.data.page, j.data.pagecount, '/search.html?wd=' + encodeURIComponent(kw)));
+          $('#pager').html(Card.page(j.data.page, j.data.pagecount, baseUrl));
         });
         return;
       }
@@ -104,7 +124,7 @@ $(function () {
           list.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
         });
         Interact.lazy(list[0]);
-        $('#pager').html(Card.page(j.data.page, j.data.pagecount, '/search.html?wd=' + encodeURIComponent(kw)));
+        $('#pager').html(Card.page(j.data.page, j.data.pagecount, baseUrl));
       });
     }
 
@@ -117,7 +137,6 @@ function doSearch(kw) {
   kw = (kw || '').trim();
   if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
 }
-
 </script>
 </body>
 </html>
