@@ -10,11 +10,15 @@ import type { Bindings } from '../types/index.ts';
 import { VodService } from '../services/vod.ts';
 import { ActorService } from '../services/actor.ts';
 import { MacXmlUtils } from '../utils/xml.ts';
+import { WebsiteService } from '../services/website.ts';
+import { MangaService } from '../services/manga.ts';
 
 export const provideVodRouter = new Hono<{ Bindings: Bindings }>();
 export const provideArtRouter = new Hono<{ Bindings: Bindings }>();
 export const provideActorRouter = new Hono<{ Bindings: Bindings }>();
 export const provideRoleRouter = new Hono<{ Bindings: Bindings }>();
+export const provideWebsiteRouter = new Hono<{ Bindings: Bindings }>();
+export const provideMangaRouter = new Hono<{ Bindings: Bindings }>();
 export const incApiRouter = new Hono<{ Bindings: Bindings }>();
 
 // 1. 核心 VOD 接口处理函数 (兼容 v8/v10 参数)
@@ -34,6 +38,10 @@ export const handleProvideVod = async (c: any) => {
   const isXml =
     (query.at === 'xml' || query.xt === '1' || c.req.path.endsWith('/apixml.php')) &&
     !c.req.path.endsWith('/apijson.php');
+  if (isXml) {
+    const config = await VodService.getConfigs(c.env.DB);
+    if (config.app_allow_xml === '0') return c.json({ code: 403, msg: '站点已关闭 XML 提供接口' }, 403);
+  }
   const filterPlay = (query.play || '').trim().toLowerCase();
 
   const ids = idsStr ? idsStr.split(',').map(Number).filter((n: number) => !isNaN(n) && n > 0) : undefined;
@@ -245,6 +253,102 @@ export const handleProvideRole = async (c: any) => {
 
 provideRoleRouter.get('/', handleProvideRole);
 provideRoleRouter.get('/*', handleProvideRole);
+
+// 4.1 MacCMS v8/v10 网址导航开放接口
+export const handleProvideWebsite = async (c: any) => {
+  const q = c.req.query();
+  if (q.at === 'xml' || q.xt === '1') {
+    const config = await VodService.getConfigs(c.env.DB);
+    if (config.app_allow_xml === '0') return c.json({ code: 403, msg: '站点已关闭 XML 提供接口' }, 403);
+  }
+  const page = Math.max(1, parseInt(q.pg || q.page || '1', 10));
+  const limit = Math.min(50, Math.max(1, parseInt(q.limit || '20', 10)));
+  const ids = String(q.ids || '').split(',').map(Number).filter((id: number) => Number.isInteger(id) && id > 0);
+  const result = await WebsiteService.query(c.env.DB, {
+    page,
+    limit,
+    typeId: q.t ? parseInt(q.t, 10) : undefined,
+    wd: q.wd,
+    status: 1,
+    ids: ids.length ? ids : undefined,
+  });
+  const typeTree = await VodService.getTypes(c.env.DB, 11);
+  const types = typeTree.flatMap((type: any) => [
+    { type_id: type.type_id, type_name: type.type_name, type_pid: type.type_pid },
+    ...(type.children || []).map((child: any) => ({ type_id: child.type_id, type_name: child.type_name, type_pid: child.type_pid })),
+  ]);
+  const list = result.list.map((item: any) => ({
+    ...item,
+    website_time: item.website_time > 0
+      ? new Date(item.website_time * 1000).toISOString().replace('T', ' ').slice(0, 19)
+      : '',
+  }));
+
+  if (q.at === 'xml' || q.xt === '1') {
+    const esc = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    const cdata = (value: unknown) => `<![CDATA[${String(value ?? '').replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
+    let xml = `<?xml version="1.0" encoding="utf-8"?>\n<rss version="5.1"><list page="${page}" pagecount="${result.pagecount}" pagesize="${limit}" recordcount="${result.total}">`;
+    for (const item of list) {
+      xml += `<website><last>${esc(item.website_time)}</last><id>${item.website_id}</id><tid>${item.type_id}</tid>` +
+        `<name>${cdata(item.website_name)}</name><sub>${cdata(item.website_sub)}</sub><en>${esc(item.website_en)}</en>` +
+        `<letter>${esc(item.website_letter)}</letter><url>${esc(item.website_url)}</url><pic>${esc(item.website_pic)}</pic>` +
+        `<logo>${esc(item.website_logo)}</logo><jumpurl>${esc(item.website_jumpurl)}</jumpurl></website>`;
+    }
+    xml += '</list><class>' + types.map((t: any) => `<ty id="${t.type_id}">${esc(t.type_name)}</ty>`).join('') + '</class></rss>';
+    return c.text(xml, 200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=60' });
+  }
+
+  return c.json({
+    code: 1,
+    msg: '网址数据列表',
+    page,
+    pagecount: result.pagecount,
+    limit: String(limit),
+    total: result.total,
+    list,
+    class: types,
+  }, 200, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=60' });
+};
+
+provideWebsiteRouter.get('/', handleProvideWebsite);
+provideWebsiteRouter.get('/*', handleProvideWebsite);
+
+// MacCMS10 漫画模型 Provide API。JSON/XML 输出均使用 D1 中的原始 manga 字段。
+export const handleProvideManga = async (c: any) => {
+  const q = c.req.query();
+  const xmlMode = q.at === 'xml' || q.xt === '1';
+  if (xmlMode) {
+    const config = await VodService.getConfigs(c.env.DB);
+    if (config.app_allow_xml === '0') return c.json({ code: 403, msg: '站点已关闭 XML 提供接口' }, 403);
+  }
+  const page = Math.max(1, parseInt(q.pg || q.page || '1', 10) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(q.limit || '20', 10) || 20));
+  const result = await MangaService.query(c.env.DB, { page, limit, typeId: q.t ? parseInt(q.t, 10) : undefined, wd: q.wd, status: 1 });
+  const typesTree = await VodService.getTypes(c.env.DB, 12);
+  const types = typesTree.flatMap((type: any) => [
+    { type_id: type.type_id, type_name: type.type_name, type_pid: type.type_pid },
+    ...(type.children || []).map((child: any) => ({ type_id: child.type_id, type_name: child.type_name, type_pid: child.type_pid })),
+  ]);
+  if (xmlMode) {
+    const esc = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    const cdata = (value: unknown) => `<![CDATA[${String(value ?? '').replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
+    let xml = `<?xml version="1.0" encoding="utf-8"?>\n<rss version="5.1"><list page="${page}" pagecount="${result.pagecount}" pagesize="${limit}" recordcount="${result.total}">`;
+    for (const item of result.list as any[]) {
+      xml += `<manga><last>${esc(item.manga_time)}</last><id>${item.manga_id}</id><tid>${item.type_id}</tid>` +
+        `<name>${cdata(item.manga_name)}</name><sub>${cdata(item.manga_sub)}</sub><en>${esc(item.manga_en)}</en>` +
+        `<letter>${esc(item.manga_letter)}</letter><pic>${esc(item.manga_pic)}</pic><author>${cdata(item.manga_author)}</author>` +
+        `<remarks>${cdata(item.manga_remarks)}</remarks><blurb>${cdata(item.manga_blurb)}</blurb>` +
+        `<chapterfrom>${esc(item.manga_chapter_from)}</chapterfrom><chapterurl>${cdata(item.manga_chapter_url)}</chapterurl></manga>`;
+    }
+    xml += '</list><class>' + types.map((type: any) => `<ty id="${type.type_id}">${esc(type.type_name)}</ty>`).join('') + '</class></rss>';
+    return c.text(xml, 200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=60' });
+  }
+  return c.json({ code: 1, msg: '漫画数据列表', page, pagecount: result.pagecount, limit: String(limit), total: result.total,
+    list: result.list, class: types }, 200, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=60' });
+};
+
+provideMangaRouter.get('/', handleProvideManga);
+provideMangaRouter.get('/*', handleProvideManga);
 
 // 5. 经典 v8 路由入口适配 (apixml.php / apijson.php 由 handleProvideVod 依据 path 判定输出格式)
 incApiRouter.get('/api.php', handleProvideVod);

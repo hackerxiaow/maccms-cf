@@ -3,135 +3,131 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MacCMS 10 全功能管理中心</title>
-<link rel="stylesheet" href="/static/theme/css/style.css">
+<meta name="theme-color" content="#ffffff">
+<title>MacCMS 管理后台</title>
 <link rel="stylesheet" href="/static/theme/fonts/iconfont.css">
 <style>
+:root{--brand:#40cc92;--brand-deep:#2db87d;--ink:#1a2233;--muted:#64748b;--faint:#94a3b8;--line:#e6ebf1;--bg:#f0f3f7;--surface:#fff;--rail:#f8fafc;--shadow:0 1px 3px rgba(16,24,40,.07);--header-h:60px;--rail-w:220px}
 *{box-sizing:border-box}
-body{margin:0;background:#0b0d12;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
-.admin-container{display:flex;min-height:100vh}
-.admin-sidebar{width:250px;background:#11141c;border-right:1px solid rgba(255,255,255,.07);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:100}
-.sidebar-logo{padding:1.2rem 1.3rem;font-size:1.05rem;font-weight:900;color:#fff;border-bottom:1px solid rgba(255,255,255,.06)}
-.sidebar-logo small{display:block;font-size:.68rem;color:#64748b;font-weight:400;margin-top:4px}
-.menu-group{list-style:none;padding:.6rem .6rem 1.5rem;margin:0;flex:1;overflow-y:auto}
-.menu-item{padding:.6rem .9rem;border-radius:8px;color:#94a3b8;font-size:.86rem;cursor:pointer;display:flex;align-items:center;gap:.6rem;margin-bottom:.2rem}
-.menu-item:hover{background:rgba(255,255,255,.05);color:#fff}
-.menu-item.active{background:linear-gradient(135deg,#ff2a55,#ff6b3d);color:#fff;font-weight:700}
-.admin-main{margin-left:250px;flex:1;padding:1.4rem 1.8rem 3rem;min-height:100vh}
-.admin-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem;padding-bottom:.9rem;border-bottom:1px solid rgba(255,255,255,.07);flex-wrap:wrap;gap:.6rem}
-.admin-topbar h2{margin:0;font-size:1.25rem;color:#fff}
-.admin-topbar .sub{font-size:.75rem;color:#64748b;margin-top:3px}
-.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.9rem;margin-bottom:1.2rem}
-.metric-card{background:#151926;border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:1rem 1.1rem;position:relative;overflow:hidden}
-.metric-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:#ff2a55}
-.metric-card span{font-size:.78rem;color:#94a3b8}
-.metric-num{font-size:1.8rem;font-weight:900;color:#fff;margin-top:.25rem}
-.admin-card{background:#151926;border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:1.1rem;margin-bottom:1.1rem}
-.card-head{display:flex;justify-content:space-between;align-items:center;gap:.7rem;flex-wrap:wrap;margin-bottom:.9rem}
-.card-head h3{margin:0;font-size:1rem;color:#fff}
-.data-table{width:100%;border-collapse:collapse;font-size:.82rem}
-.data-table th,.data-table td{padding:.6rem .7rem;border-bottom:1px solid rgba(255,255,255,.05);text-align:left;vertical-align:middle}
-.data-table th{color:#94a3b8;font-weight:600;background:rgba(255,255,255,.02);white-space:nowrap}
-.data-table tr:hover td{background:rgba(255,255,255,.02)}
-.input-box,.admin-select{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#fff;padding:.5rem .7rem;font-size:.82rem;outline:none;width:100%}
-.input-box:focus,.admin-select:focus{border-color:#ff2a55}
-.admin-select option{background:#151926;color:#fff}
-.form-group{margin-bottom:.9rem}
-.form-label{font-size:.76rem;font-weight:600;color:#94a3b8;margin-bottom:.3rem;display:block}
-.row2{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
-.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem}
-.action-btn{padding:.32rem .65rem;border-radius:6px;font-size:.76rem;cursor:pointer;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#e2e8f0}
-.action-btn:hover{background:rgba(255,255,255,.14)}
-.action-btn.del{color:#f87171;border-color:rgba(248,113,113,.3)}
-.action-btn.ok{color:#4ade80;border-color:rgba(74,222,128,.3)}
-.btn-create{padding:.45rem 1rem;border-radius:999px;background:linear-gradient(135deg,#ff2a55,#ff6b3d);color:#fff;font-size:.8rem;font-weight:700;border:none;cursor:pointer}
-.btn-plain{padding:.42rem .9rem;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#e2e8f0;font-size:.8rem;cursor:pointer}
-.tag{display:inline-block;padding:.1rem .45rem;border-radius:4px;background:rgba(56,189,248,.15);color:#38bdf8;font-size:.72rem}
-.tag.green{background:rgba(74,222,128,.15);color:#4ade80}
-.tag.red{background:rgba(248,113,113,.15);color:#f87171}
-.tag.gold{background:rgba(250,204,21,.15);color:#facc15}
-.toolbar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.9rem}
-.tabs-line{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.9rem}
-.tabs-line a{padding:.4rem .85rem;border-radius:999px;background:rgba(255,255,255,.06);color:#94a3b8;font-size:.8rem;text-decoration:none;cursor:pointer}
-.tabs-line a.active{background:#ff2a55;color:#fff;font-weight:700}
-.modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(6px);display:none;align-items:flex-start;justify-content:center;z-index:2000;overflow-y:auto;padding:3vh 1rem}
-.modal-mask.show{display:flex}
-.modal-content{background:#141824;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:1.4rem;width:100%;max-width:760px;box-shadow:0 25px 50px rgba(0,0,0,.8);margin-bottom:3vh}
-.modal-content.wide{max-width:980px}
-.modal-content h3{margin:0 0 .9rem;color:#fff;font-size:1.05rem}
-.modal-actions{display:flex;justify-content:flex-end;gap:.6rem;margin-top:1rem}
-.log-box{background:#07080b;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:.9rem;font-family:Consolas,monospace;font-size:.76rem;color:#38bdf8;max-height:320px;overflow-y:auto;white-space:pre-wrap;line-height:1.5}
-#loginWrap{position:fixed;inset:0;background:#0b0d12;display:flex;align-items:center;justify-content:center;z-index:9999}
-.login-box{background:#151926;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:2.2rem;width:360px;text-align:center}
-.login-box h2{margin:0 0 .3rem;color:#fff;font-size:1.3rem}
-.login-box p{color:#94a3b8;font-size:.78rem;margin:0 0 1.4rem}
-.pager{display:flex;justify-content:flex-end;gap:.5rem;align-items:center;margin-top:.9rem;font-size:.78rem;color:#94a3b8}
-.toast-wrap{position:fixed;top:18px;right:18px;z-index:99999;display:flex;flex-direction:column;gap:.5rem}
-.toast{background:#1e2433;border:1px solid rgba(255,255,255,.12);color:#fff;padding:.65rem 1rem;border-radius:8px;font-size:.82rem;box-shadow:0 10px 25px rgba(0,0,0,.5);max-width:360px}
-.toast.err{border-color:rgba(248,113,113,.5);color:#fca5a5}
-.muted{color:#94a3b8;font-size:.78rem}
-.code{font-family:Consolas,monospace;font-size:.74rem;color:#38bdf8}
-.empty{padding:2rem;text-align:center;color:#64748b;font-size:.85rem}
-.checkbox{width:16px;height:16px;cursor:pointer}
-.theme-tab{display:inline-block;padding:.4rem .8rem;border-radius:999px;background:rgba(255,255,255,.06);color:#94a3b8;font-size:.78rem;cursor:pointer;margin:0 .3rem .4rem 0}
-.theme-tab.active{background:#ff2a55;color:#fff;font-weight:700}
-.theme-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.9rem}
-.help-block{font-size:.74rem;color:#64748b;line-height:1.6}
-@media(max-width:900px){.admin-sidebar{display:none}.admin-main{margin-left:0}.row2,.row3{grid-template-columns:1fr}}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit}
+.admin-container{display:none;min-height:100vh}
+.admin-header{position:fixed;inset:0 0 auto;height:var(--header-h);display:grid;grid-template-columns:var(--rail-w) minmax(0,1fr) auto;align-items:stretch;background:var(--surface);border-bottom:1px solid var(--line);box-shadow:var(--shadow);z-index:1100;transition:grid-template-columns .2s ease}
+.admin-brand{display:flex;align-items:center;gap:10px;padding:0 18px;background:var(--rail);border-right:1px solid var(--line);font-weight:750;white-space:nowrap}
+.brand-mark{width:29px;height:29px;display:grid;place-items:center;border-radius:9px;background:var(--brand);color:white;font-size:16px}
+.brand-copy{line-height:1.2}.brand-copy small{display:block;margin-top:3px;color:var(--muted);font-size:10px;font-weight:500}
+.main-nav{display:flex;align-items:stretch;gap:4px;min-width:0;padding:0 16px;overflow-x:auto;scrollbar-width:none}.main-nav::-webkit-scrollbar{display:none}
+.main-nav button{position:relative;flex:0 0 auto;padding:0 15px;border:0;background:transparent;color:#526174;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.main-nav button:hover,.main-nav button.active{color:var(--brand-deep)}.main-nav button.active:after{position:absolute;right:14px;bottom:0;left:14px;height:3px;border-radius:3px 3px 0 0;background:var(--brand);content:""}
+.header-actions{display:flex;align-items:center;gap:7px;padding:0 14px}.header-action{height:34px;min-width:34px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#536175;text-decoration:none;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}.header-action:hover{border-color:#bfeeda;color:var(--brand-deep);background:#f5fdf9}.header-user{font-size:12px;color:var(--muted);white-space:nowrap}.header-user b{color:var(--ink)}
+.admin-sidebar{position:fixed;top:var(--header-h);bottom:0;left:0;width:var(--rail-w);display:flex;flex-direction:column;background:var(--rail);border-right:1px solid var(--line);z-index:1000;transition:width .2s ease,transform .2s ease;overflow:hidden}
+.sidebar-title{padding:18px 18px 10px;color:#9aa7b7;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.mobile-module-nav{display:none}
+.menu-group{list-style:none;margin:0;padding:3px 9px;flex:1;overflow:auto}
+.menu-item{width:100%;min-height:40px;display:flex;align-items:center;gap:11px;margin:2px 0;padding:0 11px;border:0;border-radius:8px;background:transparent;color:#526174;text-align:left;font-size:13px;cursor:pointer;white-space:nowrap}
+.menu-item:hover{background:#edf3f6;color:var(--ink)}.menu-item.active{background:#e1f7ed;color:#208d60;font-weight:700}.menu-icon{width:19px;flex:0 0 19px;text-align:center;font-size:15px;color:#91a0b2}.menu-item.active .menu-icon{color:#28a873}
+.sidebar-bottom{padding:9px;border-top:1px solid var(--line)}
+.sidebar-bottom .menu-item{margin:2px 0}
+.admin-rail-toggle{position:static;z-index:auto;width:100%;min-height:40px;height:auto;margin:2px 0;padding:0 11px;border:0;border-radius:8px;background:transparent;color:#526174;box-shadow:none;transition:none}
+.admin-main{min-width:0;margin-left:var(--rail-w);margin-top:var(--header-h);padding:15px 18px 32px;transition:margin-left .2s ease}
+.admin-workspace{min-width:0;min-height:calc(100vh - var(--header-h) - 48px);border:1px solid var(--line);border-radius:11px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+.admin-workspace-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--surface)}
+.admin-tabs{display:flex;align-items:center;gap:3px;min-width:0;overflow:auto;scrollbar-width:none}.admin-tabs::-webkit-scrollbar{display:none}
+.admin-tab{display:inline-flex;align-items:center;gap:9px;flex:0 0 auto;height:34px;padding:0 11px;border:0;border-radius:7px;background:transparent;color:#66758a;font-size:12px;cursor:pointer;white-space:nowrap}.admin-tab:hover{background:#f0f5f7}.admin-tab.active{background:#e9f8f1;color:#208d60;font-weight:700}.admin-tab-close{font-size:15px;color:#98a5b4}.admin-tab-close:hover{color:#dc5a65}
+.tabs-tools{display:flex;gap:4px}.tabs-tool{width:31px;height:31px;border:0;border-radius:7px;background:transparent;color:#758397;cursor:pointer}.tabs-tool:hover{background:#eef3f6;color:var(--ink)}
+.admin-content{padding:19px;min-width:0}.admin-topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 17px}.admin-topbar h2{margin:0;color:var(--ink);font-size:19px;font-weight:700}.admin-topbar .sub{margin-top:4px;color:var(--muted);font-size:12px}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px;margin-bottom:17px}.metric-card{position:relative;overflow:hidden;padding:17px 18px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:var(--shadow)}.metric-card:before{position:absolute;top:0;left:0;width:3px;height:100%;background:var(--brand);content:""}.metric-card span{color:var(--muted);font-size:12px}.metric-num{margin-top:5px;color:var(--ink);font-size:27px;font-weight:750;line-height:1.1}
+.admin-card{min-width:0;max-width:100%;margin-bottom:15px;padding:16px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:var(--shadow)}.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}.card-head h3{margin:0;color:var(--ink);font-size:14px;font-weight:700}
+.data-table{width:100%;min-width:720px;border-collapse:collapse;font-size:12px}.data-table th,.data-table td{padding:10px 11px;border-bottom:1px solid #edf0f4;text-align:left;vertical-align:middle}.data-table th{background:#f8fafc;color:#68778a;font-weight:650;white-space:nowrap}.data-table tbody tr:hover td{background:#fbfdfc}.data-table tbody tr:last-child td{border-bottom:0}
+.input-box,.admin-select{width:100%;min-height:36px;padding:7px 10px;border:1px solid #d9e0e8;border-radius:7px;outline:0;background:#fff;color:var(--ink);font-size:12px}.input-box:focus,.admin-select:focus{border-color:#70d5a9;box-shadow:0 0 0 3px rgba(64,204,146,.13)}.admin-select option{background:white;color:var(--ink)}
+.form-group{margin-bottom:12px}.form-label{display:block;margin:0 0 5px;color:#58677a;font-size:11px;font-weight:650}.row2,.row3{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.row3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.action-btn,.btn-plain{min-height:31px;padding:5px 10px;border:1px solid #dce3e9;border-radius:7px;background:#fff;color:#45546a;font-size:11px;cursor:pointer}.action-btn:hover,.btn-plain:hover{border-color:#b8e8d2;background:#f4fcf8;color:#21875e}.action-btn.del{border-color:#f1d4d6;color:#c94c55}.action-btn.ok{border-color:#c9eddd;color:#208d60}.btn-create{min-height:34px;padding:7px 13px;border:0;border-radius:7px;background:var(--brand);color:#fff;font-size:12px;font-weight:700;cursor:pointer}.btn-create:hover{background:var(--brand-deep)}
+.tag{display:inline-block;padding:3px 7px;border-radius:5px;background:#e8f5fb;color:#2580a6;font-size:10px}.tag.green{background:#e4f8ef;color:#248b61}.tag.red{background:#fff0f0;color:#d1545a}.tag.gold{background:#fff5dd;color:#a67412}
+.toolbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:12px}.tabs-line{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}.tabs-line a{padding:7px 11px;border-radius:7px;background:#f2f5f8;color:#637187;font-size:11px;text-decoration:none;cursor:pointer}.tabs-line a.active{background:#e3f7ed;color:#208d60;font-weight:700}
+.pager{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-top:12px;color:var(--muted);font-size:11px}.pager button{padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:#fff;color:#536175;cursor:pointer}.pager button:hover{border-color:#a9e4c7;color:#21875e}
+.modal-mask{position:fixed;inset:0;z-index:2000;display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:4vh 14px;background:rgba(15,23,42,.38);backdrop-filter:blur(3px)}.modal-mask.show{display:flex}.modal-content{width:100%;max-width:760px;margin-bottom:4vh;padding:20px;border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 18px 50px rgba(16,24,40,.2)}.modal-content.wide{max-width:980px}.modal-content h3{margin:0 0 16px;color:var(--ink);font-size:16px}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:15px}
+.log-box{max-height:320px;overflow:auto;padding:12px;border:1px solid var(--line);border-radius:8px;background:#f8fafc;color:#2982a2;font:11px/1.55 Consolas,monospace;white-space:pre-wrap}.theme-tab{display:inline-block;margin:0 4px 5px 0;padding:6px 10px;border-radius:6px;background:#f1f4f7;color:#637187;font-size:11px;cursor:pointer}.theme-tab.active{background:#e3f7ed;color:#208d60;font-weight:700}.theme-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.help-block,.muted{color:var(--muted);font-size:11px;line-height:1.6}.code{color:#277b9c;font:11px Consolas,monospace;overflow-wrap:anywhere}.empty{padding:30px 12px;color:#8b98a8;text-align:center;font-size:12px}.checkbox{width:15px;height:15px;accent-color:var(--brand);cursor:pointer}
+.toast-wrap{position:fixed;top:14px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:7px}.toast{max-width:360px;padding:10px 14px;border:1px solid #e2e8ee;border-radius:8px;background:#fff;color:var(--ink);font-size:12px;box-shadow:0 8px 24px rgba(15,23,42,.13)}.toast.err{border-color:#f1ced0;color:#c94c55}
+#loginWrap{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(135deg,#eff8f4,#f5f7fb 55%,#edf5f7)}.login-box{width:min(390px,100%);padding:30px;border:1px solid #e5ebef;border-radius:14px;background:#fff;box-shadow:0 20px 55px rgba(33,63,73,.12);text-align:left}.login-brand{display:flex;align-items:center;gap:11px;margin-bottom:21px}.login-box h2{margin:0;color:var(--ink);font-size:19px}.login-box p{margin:5px 0 0;color:var(--muted);font-size:12px}.login-box .form-group{margin-bottom:13px}.login-box .btn-create{width:100%;min-height:40px;margin-top:3px}.login-tip{display:none;margin-top:10px;color:#c94c55;font-size:12px}
+.sidebar-shade{display:none}
+.admin-footer{margin-left:var(--rail-w);padding:0 18px 12px;color:#93a0ae;font-size:10px;transition:margin-left .2s ease}
+.rail-collapsed .admin-header{grid-template-columns:64px minmax(0,1fr) auto}.rail-collapsed .admin-brand{justify-content:center;padding:0}.rail-collapsed .admin-sidebar{width:64px}.rail-collapsed .admin-main,.rail-collapsed .admin-footer{margin-left:64px}.rail-collapsed .sidebar-title,.rail-collapsed .menu-label,.rail-collapsed .brand-copy{display:none}.rail-collapsed .menu-item{justify-content:center;padding:0}.rail-collapsed .menu-icon{font-size:17px}
+.mobile-menu{display:none;width:36px;height:34px;align-self:center;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:#536175;font-size:17px;cursor:pointer}
+:root[data-theme="dark"]{color-scheme:dark;--ink:#e5edf7;--muted:#a0aec0;--faint:#8291a5;--line:#2c394b;--bg:#10151d;--surface:#18212d;--rail:#141c27;--shadow:0 1px 3px rgba(0,0,0,.28)}
+:root[data-theme="dark"] .main-nav button,:root[data-theme="dark"] .menu-item,:root[data-theme="dark"] .admin-tab,:root[data-theme="dark"] .tabs-tool,:root[data-theme="dark"] .header-action,:root[data-theme="dark"] .admin-rail-toggle,:root[data-theme="dark"] .mobile-menu{color:#aab8ca}
+:root[data-theme="dark"] .menu-item:hover,:root[data-theme="dark"] .tabs-tool:hover,:root[data-theme="dark"] .admin-tab:hover{background:#202d3b;color:var(--ink)}
+:root[data-theme="dark"] .menu-item.active,:root[data-theme="dark"] .admin-tab.active,:root[data-theme="dark"] .tabs-line a.active{background:#183a30;color:#73ddb0}
+:root[data-theme="dark"] .admin-brand,:root[data-theme="dark"] .admin-sidebar,:root[data-theme="dark"] .admin-header,:root[data-theme="dark"] .admin-workspace,:root[data-theme="dark"] .admin-workspace-head,:root[data-theme="dark"] .metric-card,:root[data-theme="dark"] .admin-card,:root[data-theme="dark"] .header-action,:root[data-theme="dark"] .admin-rail-toggle,:root[data-theme="dark"] .action-btn,:root[data-theme="dark"] .btn-plain,:root[data-theme="dark"] .input-box,:root[data-theme="dark"] .admin-select,:root[data-theme="dark"] .pager button,:root[data-theme="dark"] .modal-content,:root[data-theme="dark"] .toast,:root[data-theme="dark"] .login-box{background:var(--surface);color:var(--ink)}
+:root[data-theme="dark"] .admin-brand,:root[data-theme="dark"] .admin-sidebar{background:var(--rail)}
+:root[data-theme="dark"] .admin-rail-toggle{background:transparent}
+:root[data-theme="dark"] .data-table th{background:#202b38;color:#b4c1d2}
+:root[data-theme="dark"] .data-table th,:root[data-theme="dark"] .data-table td{border-color:#2b3746}
+:root[data-theme="dark"] .data-table tbody tr:hover td{background:#1d2a36}
+:root[data-theme="dark"] .input-box,:root[data-theme="dark"] .admin-select{border-color:#3a485a}
+:root[data-theme="dark"] .input-box::placeholder{color:#718096}
+:root[data-theme="dark"] .admin-select option{background:#18212d;color:var(--ink)}
+:root[data-theme="dark"] .form-label,:root[data-theme="dark"] .admin-tab-close,:root[data-theme="dark"] .menu-icon{color:#9baac0}
+:root[data-theme="dark"] .action-btn:hover,:root[data-theme="dark"] .btn-plain:hover,:root[data-theme="dark"] .header-action:hover,:root[data-theme="dark"] .pager button:hover{background:#20372f;color:#8de3bb}
+:root[data-theme="dark"] .tabs-line a,:root[data-theme="dark"] .theme-tab,:root[data-theme="dark"] .mobile-module-nav button{background:#202b38;color:#b4c1d2}
+:root[data-theme="dark"] .log-box{background:#111923;color:#82c5de}
+:root[data-theme="dark"] .toast{border-color:var(--line)}
+:root[data-theme="dark"] #loginWrap{background:linear-gradient(135deg,#101c1a,#151c29 55%,#111c22)}
+:root[data-theme="dark"] .login-box{border-color:var(--line)}
+:root[data-theme="dark"] .sidebar-shade{background:rgba(0,0,0,.55)}
+@media(max-width:900px){:root{--rail-w:220px}.admin-header{grid-template-columns:36px minmax(0,1fr) auto;gap:7px;padding:0 10px}.admin-brand{padding:0;border:0;background:transparent}.brand-copy small{display:none}.main-nav{display:none}.mobile-menu{display:inline-flex;align-items:center;justify-content:center}.header-actions{padding:0;gap:5px}.header-user{display:none}.admin-sidebar{width:min(var(--rail-w),84vw);transform:translateX(-105%);box-shadow:14px 0 36px rgba(20,35,45,.16)}.sidebar-open .admin-sidebar{transform:translateX(0)}.sidebar-open .sidebar-shade{position:fixed;inset:var(--header-h) 0 0;z-index:950;display:block;background:rgba(20,30,40,.3)}.mobile-module-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:11px 10px 8px;border-bottom:1px solid var(--line)}.mobile-module-nav button{min-height:33px;padding:5px;border:1px solid transparent;border-radius:7px;background:#eef2f5;color:#536175;font-size:11px;cursor:pointer}.mobile-module-nav button.active{border-color:#c5efdb;background:#e3f8ee;color:#218b5f;font-weight:700}.admin-main,.rail-collapsed .admin-main{margin-left:0;padding:11px 10px 22px}.admin-footer,.rail-collapsed .admin-footer{margin-left:0}.admin-rail-toggle{display:none}.admin-content{padding:14px 11px}.admin-workspace{min-height:calc(100vh - var(--header-h) - 35px)}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.metric-card{padding:13px}.metric-num{font-size:23px}.admin-topbar h2{font-size:17px}.row2,.row3{grid-template-columns:1fr}.admin-card{padding:12px}.admin-workspace-head{padding:0 7px}.tabs-tools{gap:0}}
+@media(max-width:900px){.rail-collapsed .admin-header{grid-template-columns:36px minmax(0,1fr) auto}.rail-collapsed .admin-brand{justify-content:flex-start;padding:0}}
+@media(max-width:900px){.rail-collapsed .admin-sidebar{width:min(var(--rail-w),84vw)}.rail-collapsed .sidebar-title,.rail-collapsed .menu-label,.rail-collapsed .brand-copy{display:initial}.rail-collapsed .menu-item{justify-content:flex-start;padding:0 11px}.rail-collapsed .menu-icon{font-size:15px}}
+@media(max-width:420px){.brand-copy{font-size:12px}.header-action{min-width:31px;padding:0 7px}.admin-topbar{align-items:flex-start}.metric-card span{font-size:10px}}
 </style>
 </head>
 <body>
-
 <div id="loginWrap">
   <div class="login-box">
-    <h2>MacCMS 管理中心</h2>
-    <p>Cloudflare D1 全功能 Serverless 架构</p>
-    <div style="text-align:left;margin-bottom:.8rem">
-      <label class="form-label">管理员账号</label>
-      <input class="input-box" type="text" id="adminUser" placeholder="默认账号: admin">
-    </div>
-    <div style="text-align:left;margin-bottom:1.1rem">
-      <label class="form-label">管理员密码</label>
-      <input class="input-box" type="password" id="adminPwd" placeholder="默认密码: admin888">
-    </div>
-    <button class="btn-create" style="width:100%;padding:.7rem" onclick="App.login()">登 录 控 制 台</button>
-    <div id="loginTip" style="color:#f87171;font-size:.8rem;margin-top:.8rem;display:none"></div>
+    <div class="login-brand"><span class="brand-mark">苹</span><div><h2>MacCMS 管理后台</h2><p>内容管理与站点运营</p></div></div>
+    <div class="form-group"><label class="form-label" for="adminUser">管理员账号</label><input class="input-box" type="text" id="adminUser" placeholder="请输入管理员账号" autocomplete="username"></div>
+    <div class="form-group"><label class="form-label" for="adminPwd">管理员密码</label><input class="input-box" type="password" id="adminPwd" placeholder="请输入管理员密码" autocomplete="current-password"></div>
+    <button class="btn-create" onclick="App.login()">登录管理后台</button>
+    <div class="login-tip" id="loginTip"></div>
   </div>
 </div>
 
-<div class="admin-container" id="adminContainer" style="display:none">
-  <aside class="admin-sidebar">
-    <div class="sidebar-logo">MacCMS 全功能平台<small>v10 + v8 融合 · 海螺主题</small></div>
-    <ul class="menu-group" id="sidebarMenu">
-      <li class="menu-item" data-nav="overview">📊 运行概览</li>
-      <li class="menu-item" data-nav="vod">🎬 视频管理</li>
-      <li class="menu-item" data-nav="type">📂 分类体系</li>
-      <li class="menu-item" data-nav="art">📰 文章资讯</li>
-      <li class="menu-item" data-nav="topic">🏷️ 影视专题</li>
-      <li class="menu-item" data-nav="actor">🌟 明星角色</li>
-      <li class="menu-item" data-nav="collect">⚡ 采集中心</li>
-      <li class="menu-item" data-nav="player">▶ 播放与下载</li>
-      <li class="menu-item" data-nav="user">👤 会员卡密</li>
-      <li class="menu-item" data-nav="gbook">💬 留言报错</li>
-      <li class="menu-item" data-nav="comment">🗨️ 影评管理</li>
-      <li class="menu-item" data-nav="ads">📢 广告友链</li>
-      <li class="menu-item" data-nav="theme">🎨 海螺主题</li>
-      <li class="menu-item" data-nav="tools">🧹 批量运维</li>
-      <li class="menu-item" data-nav="config">⚙️ 系统设置</li>
-      <li class="menu-item" onclick="window.open('/','_blank')" style="color:#38bdf8">🌐 访问前台 ↗</li>
-      <li class="menu-item" onclick="App.logout()" style="color:#f87171">🚪 退出登录</li>
-    </ul>
-  </aside>
-  <main class="admin-main">
-    <div class="admin-topbar">
-      <div>
-        <h2 id="viewHeading">运行概览</h2>
-        <div class="sub" id="viewSub">MacCMS Cloudflare Serverless 控制台</div>
-      </div>
-      <div style="font-size:.82rem;color:#94a3b8">管理员: <b id="lblAdminUser" style="color:#fff">admin</b></div>
+<div class="admin-container" id="adminContainer">
+  <header class="admin-header">
+    <button class="mobile-menu" id="adminMenuToggle" type="button" aria-label="打开菜单" aria-expanded="false">☰</button>
+    <div class="admin-brand"><span class="brand-mark">苹</span><span class="brand-copy">MacCMS 控制台<small>Cloudflare Serverless</small></span></div>
+    <nav class="main-nav" id="mainNav" aria-label="后台主模块"></nav>
+    <div class="header-actions">
+      <span class="header-user">管理员：<b id="lblAdminUser">admin</b></span>
+      <a class="header-action" href="/" target="_blank" rel="noopener">前台 ↗</a>
+      <button class="header-action" type="button" onclick="App.logout()">退出</button>
     </div>
-    <div id="viewHost"></div>
+  </header>
+
+  <aside class="admin-sidebar" id="adminSidebar">
+    <div class="mobile-module-nav" id="mobileModuleNav" aria-label="后台主模块"></div>
+    <div class="sidebar-title" id="sidebarModuleTitle">工作台</div>
+    <ul class="menu-group" id="sidebarMenu"></ul>
+    <div class="sidebar-bottom">
+      <button class="menu-item" id="themeToggle" type="button" title="切换深色模式" aria-label="切换深色模式"><span class="menu-icon" id="themeToggleIcon">◐</span><span class="menu-label" id="themeToggleLabel">深色模式</span></button>
+      <button class="menu-item admin-rail-toggle" id="adminRailToggle" type="button" title="收起侧栏" aria-label="收起侧栏"><span class="menu-icon" id="adminRailIcon">‹</span><span class="menu-label" id="adminRailLabel">收起侧栏</span></button>
+      <button class="menu-item" type="button" onclick="App.logout()"><span class="menu-icon">↪</span><span class="menu-label">退出登录</span></button>
+    </div>
+  </aside>
+  <div class="sidebar-shade" id="sidebarShade"></div>
+
+  <main class="admin-main">
+    <section class="admin-workspace">
+      <div class="admin-workspace-head">
+        <div class="admin-tabs" id="tabStrip" role="tablist"></div>
+        <div class="tabs-tools"><button class="tabs-tool" id="refreshView" type="button" title="刷新当前页" aria-label="刷新当前页">↻</button></div>
+      </div>
+      <div class="admin-content">
+        <div class="admin-topbar"><div><h2 id="viewHeading">工作台</h2><div class="sub" id="viewSub">站点状态与快捷入口</div></div></div>
+        <div id="viewHost"></div>
+      </div>
+    </section>
   </main>
+  <footer class="admin-footer">MacCMS Serverless · 内容管理与站点运营</footer>
 </div>
 
 <div id="modalHost"></div>
@@ -140,8 +136,12 @@ body{margin:0;background:#0b0d12;color:#e2e8f0;font-family:-apple-system,BlinkMa
 <script src="/admin/js/core.js"></script>
 <script src="/admin/js/views-vod.js"></script>
 <script src="/admin/js/views-content.js"></script>
+<script src="/admin/js/views-manga.js"></script>
+<script src="/admin/js/views-website.js"></script>
 <script src="/admin/js/views-collect.js"></script>
 <script src="/admin/js/views-member.js"></script>
 <script src="/admin/js/views-system.js"></script>
+<script src="/admin/js/views-advanced.js"></script>
+<script src="/admin/js/views-cloud.js"></script>
 </body>
 </html>

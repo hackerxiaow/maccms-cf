@@ -6,10 +6,15 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "pages:dev": "wrangler pages dev ./public --config wrangler.pages.toml",
     "deploy": "wrangler deploy",
+    "pages:deploy": "npm run build && wrangler pages deploy ./public --config wrangler.pages.toml",
     "build": "tsc --noEmit",
     "d1:init": "wrangler d1 execute maccms-db --local --file=./schema.sql",
-    "d1:init-remote": "wrangler d1 execute maccms-db --remote --file=./schema.sql"
+    "d1:init-remote": "wrangler d1 execute maccms-db --remote --file=./schema.sql",
+    "d1:migrate": "wrangler d1 migrations apply maccms-db --local",
+    "d1:migrate-remote": "wrangler d1 migrations apply maccms-db --remote",
+    "d1:pages:migrate": "wrangler d1 migrations apply maccms-db --remote --config wrangler.pages.toml"
   },
   "dependencies": {
     "hono": "^4.7.0"

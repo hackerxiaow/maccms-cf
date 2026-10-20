@@ -76,6 +76,37 @@ export class CollectorService {
     hours = 24,
     page = 1
   ): Promise<IngestResult> {
+    const started = Date.now();
+    try {
+      const result = await this.runCollectTaskInternal(db, node, hours, page);
+      const failed = result.messages.some((message) => /HTTP 错误|格式解析异常/.test(message));
+      await db.prepare(`INSERT INTO collect_run_log
+        (node_id, node_name, hours, page, fetched, inserted, updated, skipped, success, message, duration_ms, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(node.id, node.name, hours, page, result.totalFetched, result.inserted, result.updated,
+          result.skipped, failed ? 0 : 1, result.messages.join('；').slice(0, 1000), Date.now() - started,
+          Math.floor(Date.now() / 1000)).run();
+      return result;
+    } catch (error) {
+      try {
+        await db.prepare(`INSERT INTO collect_run_log
+          (node_id, node_name, hours, page, success, message, duration_ms, created_at)
+          VALUES (?, ?, ?, ?, 0, ?, ?, ?)`)
+          .bind(node.id, node.name, hours, page, (error as Error).message.slice(0, 1000), Date.now() - started,
+            Math.floor(Date.now() / 1000)).run();
+      } catch (logError) {
+        console.error('Failed to write collector run log:', logError);
+      }
+      throw error;
+    }
+  }
+
+  private static async runCollectTaskInternal(
+    db: D1Database,
+    node: CollectNodeItem,
+    hours = 24,
+    page = 1
+  ): Promise<IngestResult> {
     const result: IngestResult = {
       nodeName: node.name,
       totalFetched: 0,

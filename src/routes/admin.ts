@@ -14,8 +14,50 @@ import { CardService } from '../services/card.ts';
 import { ActorService } from '../services/actor.ts';
 import { GbookService } from '../services/gbook.ts';
 import { AdsService } from '../services/ads.ts';
+import { WebsiteService } from '../services/website.ts';
+import { MangaService } from '../services/manga.ts';
+import { cloudAdminRouter } from './cloud-admin.ts';
 
 export const adminRouter = new Hono<{ Bindings: Bindings }>();
+
+const readIds = (value: unknown): number[] => Array.isArray(value)
+  ? Array.from(new Set(value.map((id) => parseInt(String(id), 10)).filter((id) => Number.isInteger(id) && id > 0))).slice(0, 500)
+  : [];
+
+const BACKUP_TABLES = [
+  'type', 'vod', 'art', 'topic', 'manga', 'actor', 'role', 'website', 'user',
+  'user_group', 'card', 'order', 'ulog', 'gbook', 'comment', 'link', 'ads',
+  'collect_node', 'type_bind', 'player', 'downer', 'server', 'config',
+  'theme_config', 'cj_history', 'live_category', 'live_channel', 'collect_run_log', 'user_login_log',
+  'admin_role', 'admin_account', 'user_follow', 'danmaku', 'chatroom_message', 'user_pm', 'share_log',
+  'cash_log', 'coupon', 'user_coupon', 'mall_goods', 'mall_order', 'site_notice', 'sign_log', 'vod_play_fail',
+  'content_check_rule', 'content_check_issue', 'scheduled_task', 'scheduled_task_log', 'media_asset', 'user_access_rule', 'recycle_bin',
+  'sign_milestone', 'user_sign_milestone',
+  'seckill_campaign',
+] as const;
+type BackupTable = typeof BACKUP_TABLES[number];
+const isBackupTable = (value: string): value is BackupTable =>
+  (BACKUP_TABLES as readonly string[]).includes(value);
+
+const CONTENT_TABLES: Record<string, { table: string; id: string }> = {
+  vod: { table: 'vod', id: 'vod_id' }, art: { table: 'art', id: 'art_id' }, topic: { table: 'topic', id: 'topic_id' },
+  manga: { table: 'manga', id: 'manga_id' }, actor: { table: 'actor', id: 'actor_id' }, role: { table: 'role', id: 'role_id' },
+  website: { table: 'website', id: 'website_id' },
+};
+
+async function archiveContent(db: D1Database, model: string, ids: number[]): Promise<void> {
+  const mapping = CONTENT_TABLES[model];
+  if (!mapping || !ids.length) return;
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const batchIds = ids.slice(offset, offset + 100);
+    const rows = await db.prepare(`SELECT * FROM ${mapping.table} WHERE ${mapping.id} IN (${batchIds.map(() => '?').join(',')})`)
+      .bind(...batchIds).all<Record<string, unknown>>();
+    if (!rows.results?.length) continue;
+    const statements = rows.results.map((row) => db.prepare(`INSERT INTO recycle_bin (model,record_id,record_json,deleted_by,deleted_at)
+      VALUES (?,?,?,?,?)`).bind(model, Number(row[mapping.id]), JSON.stringify(row), 'admin', Math.floor(Date.now() / 1000)));
+    await db.batch(statements);
+  }
+}
 
 // 动态派生 JWT 签名密钥
 const getAdminSecret = (c: any, dbHash = ''): string => {
@@ -32,11 +74,17 @@ adminRouter.post('/login', async (c) => {
   const correctUser = configs.admin_user || 'admin';
   const dbHash = configs.admin_pwd || '';
   const envPassword = c.env.ADMIN_PASSWORD;
+  const account = await c.env.DB.prepare(`SELECT a.username, a.password_hash, a.role_key, a.status,
+      r.role_name, r.permissions
+    FROM admin_account a LEFT JOIN admin_role r ON r.role_key = a.role_key
+    WHERE a.username = ? LIMIT 1`).bind(username).first<any>();
 
   let isValid = false;
   const inputHash = await AuthUtils.sha256(password);
 
-  if (envPassword) {
+  if (account) {
+    isValid = Number(account.status) === 1 && inputHash === account.password_hash;
+  } else if (envPassword) {
     isValid = (username === correctUser && password === envPassword);
   } else if (dbHash) {
     isValid = (username === correctUser && inputHash === dbHash);
@@ -49,14 +97,27 @@ adminRouter.post('/login', async (c) => {
     return c.json({ code: 401, msg: '管理员账号或密码错误' }, 401);
   }
 
+  if (account) {
+    await c.env.DB.prepare('UPDATE admin_account SET last_login_at = ?, updated_at = ? WHERE username = ?')
+      .bind(Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000), username).run();
+  }
+
   const secret = getAdminSecret(c, dbHash);
   const token = await AuthUtils.generateToken(username, secret, 7);
+  let permissions: string[] = ['*'];
+  let role = '超级管理员';
+  if (account) {
+    try { const parsed = JSON.parse(account.permissions || '[]'); permissions = Array.isArray(parsed) ? parsed : []; } catch { permissions = []; }
+    role = account.role_name || account.role_key;
+  }
   return c.json({
     code: 0,
     msg: '登录成功',
     data: {
       token,
       username,
+      role,
+      permissions,
     },
   });
 });
@@ -77,7 +138,63 @@ adminRouter.use('*', async (c, next) => {
     return c.json({ code: 401, msg: '认证令牌已过期或无效，请重新登录' }, 401);
   }
 
+  let permissions: string[] = ['*'];
+  if (check.username) {
+    const account = await c.env.DB.prepare(`SELECT a.status, r.permissions FROM admin_account a
+      LEFT JOIN admin_role r ON r.role_key = a.role_key WHERE a.username = ? LIMIT 1`)
+      .bind(check.username).first<{ status: number; permissions: string | null }>();
+    if (account) {
+      if (Number(account.status) !== 1) return c.json({ code: 401, msg: '管理员账号已停用' }, 401);
+      try { const parsed = JSON.parse(account.permissions || '[]'); permissions = Array.isArray(parsed) ? parsed : []; } catch { permissions = []; }
+    } else if (check.username !== (configs.admin_user || 'admin')) {
+      return c.json({ code: 401, msg: '管理员账号已删除' }, 401);
+    }
+  }
+  const path = new URL(c.req.url).pathname.replace(/^\/api\/admin/, '');
+  const cloudResource = path.match(/^\/cloud\/data\/([^/]+)/)?.[1] || '';
+  const permission = path === '/overview'
+    ? ''
+      : path.startsWith('/cloud/access-rules') || path.startsWith('/cloud/sign-milestones')
+      ? 'users'
+      : path.startsWith('/cloud/recycle')
+        ? 'content'
+        : path.startsWith('/cloud/cash') || path.startsWith('/cloud/orders') || path.startsWith('/cloud/seckill')
+          ? 'ops'
+    : path.startsWith('/cloud/transfer')
+      ? 'content'
+      : path.startsWith('/cloud/data/')
+        ? (cloudResource === 'messages' || cloudResource === 'signs' ? 'users' : 'ops')
+        : path.startsWith('/collect') || path.startsWith('/player') || path.startsWith('/downer') || path.startsWith('/server')
+    ? 'collect'
+    : path.startsWith('/user') || path.startsWith('/group') || path.startsWith('/card') || path.startsWith('/order')
+      ? 'users'
+      : path.startsWith('/gbook') || path.startsWith('/comment') || path.startsWith('/ads') || path.startsWith('/link') || path.startsWith('/live') || path.startsWith('/urlsend')
+        ? 'ops'
+        : path.startsWith('/vod') || path.startsWith('/art') || path.startsWith('/topic') || path.startsWith('/type') || path.startsWith('/actor') || path.startsWith('/role') || path.startsWith('/website') || path.startsWith('/manga') || path.startsWith('/tools')
+          ? 'content'
+          : 'system';
+  if (permission && !permissions.includes('*') && !permissions.includes(permission)) {
+    return c.json({ code: 403, msg: '当前管理员没有该模块的操作权限' }, 403);
+  }
+
   await next();
+  if (check.username && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method.toUpperCase())) {
+    try {
+      await c.env.DB.prepare(`
+        INSERT INTO admin_audit_log (admin_name, method, path, response_status, client_ip, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(
+        check.username,
+        c.req.method.toUpperCase(),
+        new URL(c.req.url).pathname.slice(0, 240),
+        c.res.status,
+        (c.req.header('CF-Connecting-IP') || '').slice(0, 64),
+        Math.floor(Date.now() / 1000),
+      ).run();
+    } catch (err) {
+      console.error('Failed to write admin audit log:', err);
+    }
+  }
 });
 
 // 3. 控制台概览统计数据
@@ -93,6 +210,9 @@ adminRouter.get('/overview', async (c) => {
     countActor,
     countUser,
     countGbook,
+    countWebsite,
+    countManga,
+    countLive,
   ] = await Promise.all([
     db.prepare('SELECT COUNT(*) as c FROM vod').first<{ c: number }>(),
     db.prepare('SELECT COUNT(*) as c FROM type').first<{ c: number }>(),
@@ -101,7 +221,10 @@ adminRouter.get('/overview', async (c) => {
     db.prepare('SELECT COUNT(*) as c FROM topic').first<{ c: number }>(),
     db.prepare('SELECT COUNT(*) as c FROM actor').first<{ c: number }>(),
     db.prepare('SELECT COUNT(*) as c FROM user').first<{ c: number }>(),
-    db.prepare('SELECT COUNT(*) as c FROM gbook WHERE gbook_status = 1').first<{ c: number }>(),
+    db.prepare('SELECT COUNT(*) as c FROM gbook WHERE gbook_status = 0').first<{ c: number }>(),
+    db.prepare('SELECT COUNT(*) as c FROM website').first<{ c: number }>(),
+    db.prepare('SELECT COUNT(*) as c FROM manga WHERE manga_recycle_time = 0').first<{ c: number }>(),
+    db.prepare('SELECT COUNT(*) as c FROM live_channel').first<{ c: number }>(),
   ]);
 
   const todayStart = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
@@ -118,9 +241,104 @@ adminRouter.get('/overview', async (c) => {
       total_actor: countActor?.c || 0,
       total_user: countUser?.c || 0,
       total_gbook: countGbook?.c || 0,
+      total_website: countWebsite?.c || 0,
+      total_manga: countManga?.c || 0,
+      total_live: countLive?.c || 0,
       today_updated: countToday?.c || 0,
     },
   });
+});
+
+// 操作审计、内容访问分析与 Cloudflare D1 数据维护
+adminRouter.get('/audit/list', async (c) => {
+  const q = c.req.query();
+  const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
+  const limit = Math.min(100, Math.max(10, parseInt(q.limit || '30', 10) || 30));
+  const keyword = (q.wd || '').trim();
+  const where = keyword ? 'WHERE admin_name LIKE ? OR path LIKE ? OR method LIKE ?' : '';
+  const values = keyword ? [`%${keyword}%`, `%${keyword}%`, `%${keyword}%`] : [];
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM admin_audit_log ${where}`)
+    .bind(...values).first<{ c: number }>();
+  const rows = await c.env.DB.prepare(`
+    SELECT * FROM admin_audit_log ${where}
+    ORDER BY audit_id DESC LIMIT ? OFFSET ?
+  `).bind(...values, limit, (page - 1) * limit).all();
+  const count = total?.c || 0;
+  return c.json({ code: 0, data: { page, limit, total: count, pagecount: Math.max(1, Math.ceil(count / limit)), list: rows.results || [] } });
+});
+
+adminRouter.get('/analytics', async (c) => {
+  const days = Math.min(90, Math.max(7, parseInt(c.req.query('days') || '30', 10) || 30));
+  const from = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const [trend, byModel, top] = await Promise.all([
+    c.env.DB.prepare(`SELECT day, COUNT(*) AS views, COUNT(DISTINCT visitor_hash) AS visitors
+      FROM traffic_event WHERE day >= ? GROUP BY day ORDER BY day ASC`).bind(from).all(),
+    c.env.DB.prepare(`SELECT model, COUNT(*) AS views, COUNT(DISTINCT visitor_hash) AS visitors
+      FROM traffic_event WHERE day >= ? GROUP BY model ORDER BY views DESC`).bind(from).all(),
+    c.env.DB.prepare(`SELECT model, content_id, COUNT(*) AS views,
+      MAX(created_at) AS last_view FROM traffic_event WHERE day >= ?
+      GROUP BY model, content_id ORDER BY views DESC LIMIT 10`).bind(from).all(),
+  ]);
+  const [vod, art, manga, users, pending] = await Promise.all([
+    c.env.DB.prepare('SELECT COUNT(*) AS c FROM vod').first<{ c: number }>(),
+    c.env.DB.prepare('SELECT COUNT(*) AS c FROM art').first<{ c: number }>(),
+    c.env.DB.prepare('SELECT COUNT(*) AS c FROM manga WHERE manga_status=1').first<{ c: number }>(),
+    c.env.DB.prepare('SELECT COUNT(*) AS c FROM user').first<{ c: number }>(),
+    c.env.DB.prepare('SELECT COUNT(*) AS c FROM gbook WHERE gbook_status = 1').first<{ c: number }>(),
+  ]);
+  const totals = await c.env.DB.prepare(`SELECT COUNT(*) AS views,
+    COUNT(DISTINCT visitor_hash) AS visitors FROM traffic_event WHERE day >= ?`).bind(from)
+    .first<{ views: number; visitors: number }>();
+  return c.json({ code: 0, data: {
+    days, from, views: totals?.views || 0, visitors: totals?.visitors || 0,
+    content: { vod: vod?.c || 0, art: art?.c || 0, manga: manga?.c || 0 }, members: users?.c || 0,
+    public_gbook: pending?.c || 0,
+    trend: trend.results || [], by_model: byModel.results || [], top: top.results || [],
+  } });
+});
+
+adminRouter.get('/database/tables', async (c) => {
+  const tables = await Promise.all(BACKUP_TABLES.map(async (table) => {
+    const row = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM "${table}"`).first<{ c: number }>();
+    return { name: table, rows: row?.c || 0 };
+  }));
+  return c.json({ code: 0, data: tables });
+});
+
+adminRouter.get('/database/export/:table', async (c) => {
+  const table = c.req.param('table');
+  if (!isBackupTable(table)) return c.json({ code: 400, msg: '不支持备份该数据表' }, 400);
+  const rows = await c.env.DB.prepare(`SELECT * FROM "${table}" LIMIT 10000`).all<Record<string, unknown>>();
+  return c.json({ code: 0, data: { table, exported_at: new Date().toISOString(), rows: rows.results || [], truncated: (rows.results || []).length === 10000 } });
+});
+
+adminRouter.post('/database/import/:table', async (c) => {
+  const table = c.req.param('table');
+  if (!isBackupTable(table)) return c.json({ code: 400, msg: '不支持还原该数据表' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+  if (!rows.length || rows.length > 500) return c.json({ code: 400, msg: '单次还原必须包含 1 到 500 行数据' }, 400);
+  const info = await c.env.DB.prepare(`PRAGMA table_info("${table}")`).all<{ name: string }>();
+  const columns = new Set((info.results || []).map((col) => col.name));
+  const statements = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return c.json({ code: 400, msg: '备份行格式无效' }, 400);
+    const keys = Object.keys(row as Record<string, unknown>);
+    if (!keys.length || keys.some((key) => !columns.has(key))) return c.json({ code: 400, msg: '备份包含当前数据表不存在的字段' }, 400);
+    const quoted = keys.map((key) => `"${key}"`).join(', ');
+    const marks = keys.map(() => '?').join(', ');
+    const values = keys.map((key) => {
+      const value = (row as Record<string, unknown>)[key];
+      return value !== null && typeof value === 'object' ? JSON.stringify(value) : value;
+    });
+    statements.push(c.env.DB.prepare(`INSERT OR REPLACE INTO "${table}" (${quoted}) VALUES (${marks})`).bind(...values));
+  }
+  let restored = 0;
+  for (let i = 0; i < statements.length; i += 50) {
+    await c.env.DB.batch(statements.slice(i, i + 50));
+    restored += Math.min(50, statements.length - i);
+  }
+  return c.json({ code: 0, msg: `已还原 ${restored} 行`, data: { restored } });
 });
 
 // 4. 视频管理 API
@@ -164,8 +382,9 @@ adminRouter.post('/vod/save', async (c) => {
 
 adminRouter.delete('/vod/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
+  await archiveContent(c.env.DB, 'vod', [id]);
   await VodService.deleteVod(c.env.DB, id);
-  return c.json({ code: 0, msg: '删除成功' });
+  return c.json({ code: 0, msg: '已移至回收站' });
 });
 
 // 4.1 视频批量操作
@@ -195,8 +414,10 @@ adminRouter.post('/vod/batch/type', async (c) => {
 
 adminRouter.post('/vod/batch/del', async (c) => {
   const body = await c.req.json();
+  const ids = readIds(body.ids);
+  await archiveContent(c.env.DB, 'vod', ids);
   const count = await VodService.batchDeleteVods(c.env.DB, body.ids || []);
-  return c.json({ code: 0, msg: `已批量删除 ${count} 条记录` });
+  return c.json({ code: 0, msg: `${count} 条记录已移至回收站` });
 });
 
 // 4.2 重名检测与合并
@@ -254,6 +475,20 @@ adminRouter.get('/collect/node/list', async (c) => {
 adminRouter.get('/collect/nodes', async (c) => {
   const rows = await c.env.DB.prepare('SELECT * FROM collect_node ORDER BY id ASC').all<CollectNodeItem>();
   return c.json({ code: 0, data: rows.results || [] });
+});
+
+adminRouter.get('/collect/logs', async (c) => {
+  const q = c.req.query();
+  const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
+  const limit = Math.min(100, Math.max(10, parseInt(q.limit || '20', 10) || 20));
+  const nodeId = parseInt(q.node_id || '0', 10) || 0;
+  const where = nodeId > 0 ? 'WHERE node_id = ?' : '';
+  const params = nodeId > 0 ? [nodeId] : [];
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM collect_run_log ${where}`).bind(...params).first<{ c: number }>();
+  const rows = await c.env.DB.prepare(`SELECT * FROM collect_run_log ${where} ORDER BY run_id DESC LIMIT ? OFFSET ?`)
+    .bind(...params, limit, (page - 1) * limit).all();
+  const count = total?.c || 0;
+  return c.json({ code: 0, data: { page, limit, total: count, pagecount: Math.max(1, Math.ceil(count / limit)), list: rows.results || [] } });
 });
 
 adminRouter.post('/collect/node/save', async (c) => {
@@ -437,7 +672,8 @@ adminRouter.get('/art/list', async (c) => {
   const q = c.req.query();
   const page = parseInt(q.page || '1', 10);
   const limit = parseInt(q.limit || '15', 10);
-  const data = await VodService.queryArts(c.env.DB, { page, limit, wd: q.wd });
+  const status = q.status !== undefined ? parseInt(q.status, 10) : -1;
+  const data = await VodService.queryArts(c.env.DB, { page, limit, wd: q.wd, status });
   return c.json({ code: 0, data });
 });
 
@@ -456,13 +692,35 @@ adminRouter.post('/art/save', async (c) => {
 
 adminRouter.delete('/art/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
+  await archiveContent(c.env.DB, 'art', [id]);
   await VodService.deleteArt(c.env.DB, id);
-  return c.json({ code: 0, msg: '文章删除成功' });
+  return c.json({ code: 0, msg: '文章已移至回收站' });
+});
+
+adminRouter.post('/art/batch/status', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  if (!ids.length) return c.json({ code: 400, msg: '请选择要更新的文章' }, 400);
+  const status = Number(body.status) === 1 ? 1 : 0;
+  const placeholders = ids.map(() => '?').join(',');
+  const result = await c.env.DB.prepare(`UPDATE art SET art_status = ? WHERE art_id IN (${placeholders})`)
+    .bind(status, ...ids).run();
+  return c.json({ code: 0, msg: `已更新 ${result.meta.changes || 0} 篇文章` });
+});
+
+adminRouter.post('/art/batch/delete', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  if (!ids.length) return c.json({ code: 400, msg: '请选择要删除的文章' }, 400);
+  const placeholders = ids.map(() => '?').join(',');
+  await archiveContent(c.env.DB, 'art', ids);
+  const result = await c.env.DB.prepare(`DELETE FROM art WHERE art_id IN (${placeholders})`).bind(...ids).run();
+  return c.json({ code: 0, msg: `${result.meta.changes || 0} 篇文章已移至回收站` });
 });
 
 // 9. 影视专题管理 API
 adminRouter.get('/topic/list', async (c) => {
-  const data = await VodService.queryTopics(c.env.DB);
+  const data = await VodService.queryTopics(c.env.DB, true);
   return c.json({ code: 0, data });
 });
 
@@ -481,16 +739,98 @@ adminRouter.post('/topic/save', async (c) => {
 
 adminRouter.delete('/topic/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
+  await archiveContent(c.env.DB, 'topic', [id]);
   await VodService.deleteTopic(c.env.DB, id);
-  return c.json({ code: 0, msg: '专题删除成功' });
+  return c.json({ code: 0, msg: '专题已移至回收站' });
 });
 
-// 10. 明星与角色管理 API
+adminRouter.post('/topic/batch/status', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  if (!ids.length) return c.json({ code: 400, msg: '请选择要更新的专题' }, 400);
+  const status = Number(body.status) === 1 ? 1 : 0;
+  const placeholders = ids.map(() => '?').join(',');
+  const result = await c.env.DB.prepare(`UPDATE topic SET topic_status = ? WHERE topic_id IN (${placeholders})`)
+    .bind(status, ...ids).run();
+  return c.json({ code: 0, msg: `已更新 ${result.meta.changes || 0} 个专题` });
+});
+
+adminRouter.post('/topic/batch/delete', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  if (!ids.length) return c.json({ code: 400, msg: '请选择要删除的专题' }, 400);
+  const placeholders = ids.map(() => '?').join(',');
+  await archiveContent(c.env.DB, 'topic', ids);
+  const result = await c.env.DB.prepare(`DELETE FROM topic WHERE topic_id IN (${placeholders})`).bind(...ids).run();
+  return c.json({ code: 0, msg: `${result.meta.changes || 0} 个专题已移至回收站` });
+});
+
+// 10. MacCMS v10 漫画管理 API
+adminRouter.get('/manga/list', async (c) => {
+  const q = c.req.query();
+  const status = q.status !== undefined ? parseInt(q.status, 10) : -1;
+  const data = await MangaService.query(c.env.DB, {
+    page: parseInt(q.page || '1', 10),
+    limit: parseInt(q.limit || '20', 10),
+    typeId: q.type_id ? parseInt(q.type_id, 10) : undefined,
+    wd: q.wd,
+    status,
+  });
+  return c.json({ code: 0, data });
+});
+
+adminRouter.get('/manga/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  const data = await MangaService.get(c.env.DB, id);
+  if (!data) return c.json({ code: 404, msg: '漫画不存在' }, 404);
+  return c.json({ code: 0, data });
+});
+
+adminRouter.post('/manga/save', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    const id = await MangaService.save(c.env.DB, body);
+    return c.json({ code: 0, msg: '漫画已保存', data: { manga_id: id } });
+  } catch (err) {
+    return c.json({ code: 400, msg: (err as Error).message }, 400);
+  }
+});
+
+adminRouter.delete('/manga/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '无效的漫画 ID' }, 400);
+  await archiveContent(c.env.DB, 'manga', [id]);
+  await MangaService.delete(c.env.DB, id);
+  return c.json({ code: 0, msg: '漫画已移至回收站' });
+});
+
+adminRouter.post('/manga/batch/status', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  if (!ids.length) return c.json({ code: 400, msg: '请选择要更新的漫画' }, 400);
+  const status = Number(body.status) === 1 ? 1 : 0;
+  const placeholders = ids.map(() => '?').join(',');
+  const result = await c.env.DB.prepare(`UPDATE manga SET manga_status = ? WHERE manga_id IN (${placeholders})`)
+    .bind(status, ...ids).run();
+  return c.json({ code: 0, msg: `已更新 ${result.meta.changes || 0} 部漫画` });
+});
+
+adminRouter.post('/manga/batch/delete', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  if (!ids.length) return c.json({ code: 400, msg: '请选择要删除的漫画' }, 400);
+  const placeholders = ids.map(() => '?').join(',');
+  await archiveContent(c.env.DB, 'manga', ids);
+  const result = await c.env.DB.prepare(`DELETE FROM manga WHERE manga_id IN (${placeholders})`).bind(...ids).run();
+  return c.json({ code: 0, msg: `${result.meta.changes || 0} 部漫画已移至回收站` });
+});
+
+// 11. 明星与角色管理 API
 adminRouter.get('/actor/list', async (c) => {
   const q = c.req.query();
   const page = parseInt(q.page || '1', 10);
   const limit = parseInt(q.limit || '15', 10);
-  const data = await ActorService.queryActors(c.env.DB, { page, limit, wd: q.wd });
+  const data = await ActorService.queryActors(c.env.DB, { page, limit, wd: q.wd, includeHidden: true });
   return c.json({ code: 0, data });
 });
 
@@ -509,15 +849,16 @@ adminRouter.post('/actor/save', async (c) => {
 
 adminRouter.delete('/actor/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
+  await archiveContent(c.env.DB, 'actor', [id]);
   await ActorService.deleteActor(c.env.DB, id);
-  return c.json({ code: 0, msg: '明星已删除' });
+  return c.json({ code: 0, msg: '明星已移至回收站' });
 });
 
 adminRouter.get('/role/list', async (c) => {
   const q = c.req.query();
   const page = parseInt(q.page || '1', 10);
   const limit = parseInt(q.limit || '15', 10);
-  const data = await ActorService.queryRoles(c.env.DB, { page, limit, wd: q.wd });
+  const data = await ActorService.queryRoles(c.env.DB, { page, limit, wd: q.wd, includeHidden: true });
   return c.json({ code: 0, data });
 });
 
@@ -529,8 +870,9 @@ adminRouter.post('/role/save', async (c) => {
 
 adminRouter.delete('/role/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
+  await archiveContent(c.env.DB, 'role', [id]);
   await ActorService.deleteRole(c.env.DB, id);
-  return c.json({ code: 0, msg: '角色已删除' });
+  return c.json({ code: 0, msg: '角色已移至回收站' });
 });
 
 // 11. 会员中心管理 API
@@ -542,10 +884,70 @@ adminRouter.get('/user/list', async (c) => {
   return c.json({ code: 0, data });
 });
 
+adminRouter.get('/user/access-log', async (c) => {
+  const q = c.req.query();
+  const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
+  const limit = Math.min(100, Math.max(10, parseInt(q.limit || '30', 10) || 30));
+  const keyword = (q.wd || '').trim();
+  const where = keyword ? 'WHERE l.user_name LIKE ? OR l.client_ip LIKE ?' : '';
+  const params = keyword ? [`%${keyword}%`, `%${keyword}%`] : [];
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM user_login_log l ${where}`).bind(...params).first<{ c: number }>();
+  const rows = await c.env.DB.prepare(`SELECT l.*, u.user_nick FROM user_login_log l
+    LEFT JOIN user u ON u.user_id = l.user_id ${where}
+    ORDER BY l.login_log_id DESC LIMIT ? OFFSET ?`).bind(...params, limit, (page - 1) * limit).all();
+  const count = total?.c || 0;
+  return c.json({ code: 0, data: { page, limit, total: count, pagecount: Math.max(1, Math.ceil(count / limit)), list: rows.results || [] } });
+});
+
+adminRouter.get('/user/ulog/list', async (c) => {
+  const q = c.req.query();
+  const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
+  const limit = Math.min(100, Math.max(10, parseInt(q.limit || '30', 10) || 30));
+  const keyword = (q.wd || '').trim();
+  const where = keyword ? 'WHERE u.user_name LIKE ? OR ulog.ulog_rid = ?' : '';
+  const params = keyword ? [`%${keyword}%`, Number(keyword) || -1] : [];
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM ulog LEFT JOIN user u ON u.user_id = ulog.user_id ${where}`)
+    .bind(...params).first<{ c: number }>();
+  const rows = await c.env.DB.prepare(`SELECT ulog.*, u.user_name, u.user_nick
+    FROM ulog LEFT JOIN user u ON u.user_id = ulog.user_id ${where}
+    ORDER BY ulog.ulog_id DESC LIMIT ? OFFSET ?`).bind(...params, limit, (page - 1) * limit).all();
+  const count = total?.c || 0;
+  return c.json({ code: 0, data: { page, limit, total: count, pagecount: Math.max(1, Math.ceil(count / limit)), list: rows.results || [] } });
+});
+
 adminRouter.post('/user/save', async (c) => {
   const body = await c.req.json();
   const id = await UserService.saveUser(c.env.DB, body);
   return c.json({ code: 0, msg: '会员信息已更新', data: { user_id: id } });
+});
+
+adminRouter.get('/order/list', async (c) => {
+  const q = c.req.query();
+  const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(q.limit || '20', 10) || 20));
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (q.status !== undefined && q.status !== '') {
+    conditions.push('o.order_status = ?');
+    params.push(parseInt(q.status, 10) === 1 ? 1 : 0);
+  }
+  const keyword = String(q.wd || '').trim();
+  if (keyword) {
+    conditions.push('(o.order_code LIKE ? OR u.user_name LIKE ?)');
+    params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM "order" o LEFT JOIN user u ON u.user_id = o.user_id ${where}`)
+    .bind(...params).first<{ c: number }>();
+  const count = total?.c || 0;
+  const rows = await c.env.DB.prepare(`
+    SELECT o.*, u.user_name
+    FROM "order" o LEFT JOIN user u ON u.user_id = o.user_id
+    ${where}
+    ORDER BY o.order_time DESC, o.order_id DESC
+    LIMIT ? OFFSET ?
+  `).bind(...params, limit, (page - 1) * limit).all();
+  return c.json({ code: 0, data: { list: rows.results || [], total: count, page, limit, pagecount: Math.ceil(count / limit) } });
 });
 
 adminRouter.delete('/user/:id', async (c) => {
@@ -607,6 +1009,19 @@ adminRouter.post('/gbook/reply', async (c) => {
   return c.json({ code: 0, msg: '回复成功' });
 });
 
+adminRouter.post('/gbook/batch/status', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  const status = Number(body.status);
+  if (!ids.length || (status !== 0 && status !== 1)) {
+    return c.json({ code: 400, msg: '请选择留言并指定有效状态' }, 400);
+  }
+  const placeholders = ids.map(() => '?').join(',');
+  await c.env.DB.prepare(`UPDATE gbook SET gbook_status = ? WHERE gbook_id IN (${placeholders})`)
+    .bind(status, ...ids).run();
+  return c.json({ code: 0, msg: `已${status ? '公开' : '隐藏'} ${ids.length} 条反馈` });
+});
+
 adminRouter.delete('/gbook/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   await GbookService.deleteGbook(c.env.DB, id);
@@ -633,6 +1048,28 @@ adminRouter.delete('/ads/:id', async (c) => {
 
 // 15. 评论互动管理 API (根据 comment_mid 关联相应名称)
 adminRouter.get('/comment/list', async (c) => {
+  const q = c.req.query();
+  const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(q.limit || '20', 10) || 20));
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (q.status === '0' || q.status === '1') {
+    conditions.push('comment_status = ?');
+    params.push(parseInt(q.status, 10));
+  }
+  if (q.mid && Number.isInteger(parseInt(q.mid, 10))) {
+    conditions.push('comment_mid = ?');
+    params.push(parseInt(q.mid, 10));
+  }
+  const keyword = String(q.wd || '').trim();
+  if (keyword) {
+    conditions.push('(comment_name LIKE ? OR comment_content LIKE ?)');
+    params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const count = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM comment ${where}`)
+    .bind(...params).first<{ c: number }>();
+  const total = count?.c || 0;
   const rows = await c.env.DB.prepare(`
     SELECT
       c.*,
@@ -643,10 +1080,24 @@ adminRouter.get('/comment/list', async (c) => {
         ELSE ''
       END as target_name
     FROM comment c
+    ${where}
     ORDER BY c.comment_id DESC
-    LIMIT 60
-  `).all();
-  return c.json({ code: 0, data: rows.results || [] });
+    LIMIT ? OFFSET ?
+  `).bind(...params, limit, (page - 1) * limit).all();
+  return c.json({ code: 0, data: { list: rows.results || [], total, page, limit, pagecount: Math.ceil(total / limit) } });
+});
+
+adminRouter.post('/comment/batch/status', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  const status = Number(body.status);
+  if (!ids.length || (status !== 0 && status !== 1)) {
+    return c.json({ code: 400, msg: '请选择评论并指定有效状态' }, 400);
+  }
+  const placeholders = ids.map(() => '?').join(',');
+  await c.env.DB.prepare(`UPDATE comment SET comment_status = ? WHERE comment_id IN (${placeholders})`)
+    .bind(status, ...ids).run();
+  return c.json({ code: 0, msg: `已${status ? '通过' : '隐藏'} ${ids.length} 条评论` });
 });
 
 adminRouter.delete('/comment/:id', async (c) => {
@@ -673,7 +1124,207 @@ adminRouter.delete('/link/:id', async (c) => {
   return c.json({ code: 0, msg: '链接已删除' });
 });
 
-// 17. 海螺主题全局配置 API (120+ 项参数可视化)
+// 16.1 MacCMS 网址导航内容模型 (type_mid=11)
+adminRouter.get('/website/list', async (c) => {
+  const q = c.req.query();
+  const status = q.status !== undefined ? parseInt(q.status, 10) : undefined;
+  const data = await WebsiteService.query(c.env.DB, {
+    page: parseInt(q.page || '1', 10),
+    limit: parseInt(q.limit || '20', 10),
+    typeId: q.type_id ? parseInt(q.type_id, 10) : undefined,
+    wd: q.wd,
+    status,
+  });
+  return c.json({ code: 0, data });
+});
+
+adminRouter.post('/website/save', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    const id = await WebsiteService.save(c.env.DB, body);
+    return c.json({ code: 0, msg: '网址已保存', data: { website_id: id } });
+  } catch (err) {
+    return c.json({ code: 400, msg: (err as Error).message }, 400);
+  }
+});
+
+adminRouter.delete('/website/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '无效的网址 ID' }, 400);
+  await archiveContent(c.env.DB, 'website', [id]);
+  await WebsiteService.delete(c.env.DB, id);
+  return c.json({ code: 0, msg: '网址已移至回收站' });
+});
+
+adminRouter.post('/website/batch/status', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  if (!ids.length) return c.json({ code: 400, msg: '请选择网址条目' }, 400);
+  const status = Number(body.status) === 1 ? 1 : 0;
+  const marks = ids.map(() => '?').join(',');
+  const result = await c.env.DB.prepare(`UPDATE website SET website_status = ? WHERE website_id IN (${marks})`)
+    .bind(status, ...ids).run();
+  return c.json({ code: 0, msg: `已更新 ${result.meta.changes || 0} 个网址状态` });
+});
+
+adminRouter.post('/website/batch/delete', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = readIds(body.ids);
+  if (!ids.length) return c.json({ code: 400, msg: '请选择网址条目' }, 400);
+  const marks = ids.map(() => '?').join(',');
+  await archiveContent(c.env.DB, 'website', ids);
+  const result = await c.env.DB.prepare(`DELETE FROM website WHERE website_id IN (${marks})`).bind(...ids).run();
+  return c.json({ code: 0, msg: `${result.meta.changes || 0} 个网址条目已移至回收站` });
+});
+
+// 18. MacCMS10 直播频道与分类维护
+adminRouter.get('/live/categories', async (c) => {
+  const rows = await c.env.DB.prepare('SELECT * FROM live_category ORDER BY live_category_sort, live_category_id').all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+adminRouter.post('/live/category/save', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const name = String(body.live_category_name || '').trim();
+  if (!name) return c.json({ code: 400, msg: '请填写直播分类名称' }, 400);
+  const status = Number(body.live_category_status) === 0 ? 0 : 1;
+  const sort = Number(body.live_category_sort) || 0;
+  const id = Number(body.live_category_id) || 0;
+  if (id > 0) {
+    await c.env.DB.prepare('UPDATE live_category SET live_category_name = ?, live_category_sort = ?, live_category_status = ? WHERE live_category_id = ?')
+      .bind(name, sort, status, id).run();
+  } else {
+    await c.env.DB.prepare('INSERT INTO live_category (live_category_name, live_category_sort, live_category_status) VALUES (?, ?, ?)')
+      .bind(name, sort, status).run();
+  }
+  return c.json({ code: 0, msg: '直播分类已保存' });
+});
+
+adminRouter.delete('/live/category/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '无效的分类 ID' }, 400);
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE live_channel SET live_category_id = 0 WHERE live_category_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM live_category WHERE live_category_id = ?').bind(id),
+  ]);
+  return c.json({ code: 0, msg: '直播分类已删除，频道已移至未分类' });
+});
+
+adminRouter.get('/live/list', async (c) => {
+  const q = c.req.query();
+  const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
+  const limit = Math.min(100, Math.max(10, parseInt(q.limit || '20', 10) || 20));
+  const keyword = (q.wd || '').trim();
+  const category = parseInt(q.category_id || '0', 10) || 0;
+  const where: string[] = [];
+  const params: (string | number)[] = [];
+  if (keyword) { where.push('(l.live_name LIKE ? OR l.live_url LIKE ?)'); params.push(`%${keyword}%`, `%${keyword}%`); }
+  if (category > 0) { where.push('l.live_category_id = ?'); params.push(category); }
+  if (q.status !== undefined && q.status !== '') { where.push('l.live_status = ?'); params.push(Number(q.status) === 1 ? 1 : 0); }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM live_channel l ${clause}`).bind(...params).first<{ c: number }>();
+  const rows = await c.env.DB.prepare(`SELECT l.*, c.live_category_name FROM live_channel l
+    LEFT JOIN live_category c ON c.live_category_id = l.live_category_id ${clause}
+    ORDER BY l.live_sort, l.live_id DESC LIMIT ? OFFSET ?`)
+    .bind(...params, limit, (page - 1) * limit).all();
+  const count = total?.c || 0;
+  return c.json({ code: 0, data: { page, limit, total: count, pagecount: Math.max(1, Math.ceil(count / limit)), list: rows.results || [] } });
+});
+
+adminRouter.post('/live/save', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const name = String(body.live_name || '').trim();
+  const url = String(body.live_url || '').trim();
+  if (!name || !url || !/^https?:\/\//i.test(url)) return c.json({ code: 400, msg: '请填写频道名称和有效的 HTTP(S) 播放地址' }, 400);
+  const fields = [
+    Math.max(0, Number(body.live_category_id) || 0), name, url,
+    String(body.live_logo || '').trim(), String(body.live_desc || '').trim(),
+    Number(body.live_status) === 0 ? 0 : 1, Number(body.live_sort) || 0,
+    Math.floor(Date.now() / 1000),
+  ];
+  const id = Number(body.live_id) || 0;
+  if (id > 0) {
+    await c.env.DB.prepare(`UPDATE live_channel SET live_category_id = ?, live_name = ?, live_url = ?, live_logo = ?, live_desc = ?, live_status = ?, live_sort = ?, live_time = ? WHERE live_id = ?`)
+      .bind(...fields, id).run();
+  } else {
+    await c.env.DB.prepare(`INSERT INTO live_channel (live_category_id, live_name, live_url, live_logo, live_desc, live_status, live_sort, live_time)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(...fields).run();
+  }
+  return c.json({ code: 0, msg: '直播频道已保存' });
+});
+
+adminRouter.delete('/live/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '无效的频道 ID' }, 400);
+  await c.env.DB.prepare('DELETE FROM live_channel WHERE live_id = ?').bind(id).run();
+  return c.json({ code: 0, msg: '直播频道已删除' });
+});
+
+// 19. 百度主动推送：从已发布内容生成前台详情地址后推送
+adminRouter.get('/urlsend/settings', async (c) => {
+  const cfg = await VodService.getConfigs(c.env.DB);
+  return c.json({ code: 0, data: { site_url: cfg.site_url || c.env.SITE_URL || '', has_token: !!cfg.urlsend_baidu_token } });
+});
+
+adminRouter.post('/urlsend/settings', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const token = String(body.token || '').trim();
+  if (token.length > 300) return c.json({ code: 400, msg: '推送密钥长度无效' }, 400);
+  if (body.clear === true) await VodService.setConfig(c.env.DB, 'urlsend_baidu_token', '');
+  else if (token) await VodService.setConfig(c.env.DB, 'urlsend_baidu_token', token);
+  return c.json({ code: 0, msg: '推送密钥已保存' });
+});
+
+adminRouter.post('/urlsend/push', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const model = String(body.model || 'vod');
+  const limit = Math.min(1000, Math.max(1, parseInt(body.limit || '100', 10) || 100));
+  const cfg = await VodService.getConfigs(c.env.DB);
+  const token = String(cfg.urlsend_baidu_token || '').trim();
+  const siteUrl = String(cfg.site_url || c.env.SITE_URL || '').trim();
+  if (!token) return c.json({ code: 400, msg: '请先配置百度推送 Token' }, 400);
+  let origin: URL;
+  try { origin = new URL(siteUrl); } catch { return c.json({ code: 400, msg: '请先在系统设置中配置正确的站点网址' }, 400); }
+  if (!['http:', 'https:'].includes(origin.protocol) || ['localhost', '127.0.0.1'].includes(origin.hostname)) {
+    return c.json({ code: 400, msg: '站点网址必须是可公开访问的 HTTP(S) 地址' }, 400);
+  }
+  const modelSql: Record<string, { sql: string; column: string; path: string }> = {
+    vod: { sql: 'SELECT vod_id AS id FROM vod WHERE vod_status = 1 ORDER BY vod_time DESC LIMIT ?', column: 'vod', path: '/detail.html?id=' },
+    art: { sql: 'SELECT art_id AS id FROM art WHERE art_status = 1 ORDER BY art_time DESC LIMIT ?', column: 'art', path: '/art.html?id=' },
+    topic: { sql: 'SELECT topic_id AS id FROM topic WHERE topic_status = 1 ORDER BY topic_time DESC LIMIT ?', column: 'topic', path: '/topic.html?id=' },
+    actor: { sql: 'SELECT actor_id AS id FROM actor WHERE actor_status = 1 ORDER BY actor_time DESC LIMIT ?', column: 'actor', path: '/actor_detail.html?id=' },
+    manga: { sql: 'SELECT manga_id AS id FROM manga WHERE manga_status = 1 ORDER BY manga_time DESC LIMIT ?', column: 'manga', path: '/manga.html?id=' },
+  };
+  const query = modelSql[model];
+  if (!query) return c.json({ code: 400, msg: '当前仅支持影片、文章、专题、明星和漫画' }, 400);
+  const rows = await c.env.DB.prepare(query.sql).bind(limit).all<{ id: number }>();
+  const urls = (rows.results || []).map((row) => `${origin.origin}${query.path}${row.id}`);
+  if (!urls.length) return c.json({ code: 400, msg: '没有可推送的已发布内容' }, 400);
+  let responseText = '';
+  let status = 0;
+  let payload: Record<string, unknown> = {};
+  try {
+    const response = await fetch(`https://data.zz.baidu.com/urls?site=${encodeURIComponent(origin.host)}&token=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: urls.join('\n'),
+    });
+    status = response.status;
+    responseText = (await response.text()).slice(0, 2000);
+    try { payload = JSON.parse(responseText); } catch { payload = { message: responseText }; }
+  } catch (err) {
+    responseText = (err as Error).message.slice(0, 2000);
+  }
+  await c.env.DB.prepare(`INSERT INTO url_push_log (model, submitted, success, remain, status, response, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .bind(model, urls.length, Number(payload.success) || 0, Number(payload.remain) || 0, status, responseText, Math.floor(Date.now() / 1000)).run();
+  return c.json({ code: status >= 200 && status < 300 ? 0 : 502, msg: status >= 200 && status < 300 ? '推送请求已提交' : '百度推送失败', data: { model, submitted: urls.length, status, result: payload } }, status >= 200 && status < 300 ? 200 : 502);
+});
+
+adminRouter.get('/urlsend/history', async (c) => {
+  const rows = await c.env.DB.prepare('SELECT * FROM url_push_log ORDER BY push_id DESC LIMIT 50').all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+// 20. 海螺主题全局配置 API (120+ 项参数可视化)
 adminRouter.get('/theme', async (c) => {
   const data = await ThemeService.getForAdmin(c.env.DB);
   return c.json({ code: 0, data });
@@ -714,3 +1365,5 @@ adminRouter.post('/config', async (c) => {
 
   return c.json({ code: 0, msg: '系统配置已更新' });
 });
+
+adminRouter.route('/cloud', cloudAdminRouter);

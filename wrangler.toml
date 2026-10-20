@@ -13,10 +13,16 @@ binding = "ASSETS"
 binding = "DB"
 database_name = "maccms-db"
 database_id = "local-maccms-db" # 生产环境部署时替换为 wrangler d1 create maccms-db 生成的真实 UUID
+migrations_dir = "migrations"
 
-# 定时采集触发器 (默认每小时执行一次自动增量采集)
+# 定时调度入口 (每 5 分钟检查自动采集与后台任务计划)
 [triggers]
-crons = ["0 * * * *"]
+crons = ["*/5 * * * *"]
+
+# Create the bucket before deploying: wrangler r2 bucket create maccms-media
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "maccms-media"
 
 # 环境变量
 [vars]

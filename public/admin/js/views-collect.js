@@ -17,13 +17,17 @@
       '<button class="btn-create" id="runTodayBtn">⚡ 采集今日更新 (h=24)</button>' +
       '<button class="action-btn" id="runHourBtn">⏱ 采集近 1 小时</button>' +
       '<button class="action-btn" id="runAllBtn">🔄 全量深度采集 (h=0)</button>' +
-      '</div><div class="log-box" id="collectLog">系统就绪：可执行单个节点或全站采集任务。</div></div>';
+      '</div><div class="log-box" id="collectLog">系统就绪：可执行单个节点或全站采集任务。</div></div>' +
+      '<div class="admin-card"><div class="card-head"><h3>采集运行记录（含定时任务）</h3><button class="action-btn" id="refreshCollectHistory">刷新</button></div>' +
+      '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>时间</th><th>节点</th><th>范围</th><th>获取</th><th>新增 / 更新 / 跳过</th><th>耗时</th><th>状态 / 信息</th></tr></thead><tbody id="collectHistoryRows"></tbody></table></div><div id="collectHistoryPager"></div></div>';
 
     App.on('nodeAddBtn', 'click', function () { openNodeModal(null); });
     App.on('runTodayBtn', 'click', function () { runAll(24); });
     App.on('runHourBtn', 'click', function () { runAll(1); });
     App.on('runAllBtn', 'click', function () { runAll(0); });
+    App.on('refreshCollectHistory', 'click', function () { loadCollectHistory(1); });
     loadNodes();
+    loadCollectHistory(1);
   };
 
   async function loadNodes() {
@@ -150,6 +154,7 @@
     var r = await App.req('/collect/run', { method: 'POST', body: { node_id: nodeId, hours: hours } });
     log.textContent = '[' + new Date().toLocaleTimeString() + '] 节点 #' + nodeId + ' 执行结果：\n' + JSON.stringify(r, null, 2);
     loadNodes();
+    loadCollectHistory(1);
   }
 
   async function runAll(hours) {
@@ -165,5 +170,22 @@
     }
     log.textContent += '\n\n✅ 全部任务执行完毕';
     loadNodes();
+    loadCollectHistory(1);
+  }
+
+  async function loadCollectHistory(page) {
+    page = page || 1;
+    var result = await App.req('/collect/logs?page=' + page + '&limit=20');
+    var data = result.data || {};
+    var rows = data.list || [];
+    var host = document.getElementById('collectHistoryRows');
+    if (!host) return;
+    host.innerHTML = rows.length ? rows.map(function (row) {
+      var message = row.message || (row.success ? '完成' : '执行失败');
+      return '<tr><td>' + App.fmtTime(row.created_at) + '</td><td>' + App.esc(row.node_name) + ' (#' + row.node_id + ')</td>' +
+        '<td>h=' + row.hours + ' / pg=' + row.page + '</td><td>' + row.fetched + '</td><td>' + row.inserted + ' / ' + row.updated + ' / ' + row.skipped + '</td>' +
+        '<td>' + (row.duration_ms || 0) + ' ms</td><td>' + (row.success ? '<span class="tag green">成功</span>' : '<span class="tag red">失败</span>') + ' ' + App.esc(message) + '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="empty">暂无采集记录；手动或定时采集后会显示运行结果。</td></tr>';
+    document.getElementById('collectHistoryPager').innerHTML = App.pager(data, loadCollectHistory);
   }
 })(window);

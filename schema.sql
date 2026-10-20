@@ -3,7 +3,7 @@
 -- 深度融合 MacCMS v8 经典生态与 MacCMS v10 完整功能矩阵
 -- ========================================================
 
--- 1. 分类表 (统一分类模型 type_mid: 1=vod, 2=art, 3=topic, 8=actor, 9=role, 11=website)
+-- 1. 分类表 (统一分类模型 type_mid: 1=vod, 2=art, 3=topic, 8=actor, 9=role, 11=website, 12=manga)
 CREATE TABLE IF NOT EXISTS type (
   type_id INTEGER PRIMARY KEY AUTOINCREMENT,
   type_name TEXT NOT NULL,
@@ -259,7 +259,72 @@ CREATE TABLE IF NOT EXISTS topic (
   topic_time_add INTEGER NOT NULL DEFAULT 0
 );
 
--- 10. 明星演员表 (Actor - MacCMS v10 核心知识图谱)
+-- 10. MacCMS v10 漫画模型 (type_mid=12)
+CREATE TABLE IF NOT EXISTS manga (
+  manga_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type_id INTEGER NOT NULL DEFAULT 0,
+  type_id_1 INTEGER NOT NULL DEFAULT 0,
+  group_id INTEGER NOT NULL DEFAULT 0,
+  manga_name TEXT NOT NULL DEFAULT '',
+  manga_sub TEXT NOT NULL DEFAULT '',
+  manga_en TEXT NOT NULL DEFAULT '',
+  manga_status INTEGER NOT NULL DEFAULT 1,
+  manga_letter TEXT NOT NULL DEFAULT '',
+  manga_color TEXT NOT NULL DEFAULT '',
+  manga_from TEXT NOT NULL DEFAULT '',
+  manga_author TEXT NOT NULL DEFAULT '',
+  manga_tag TEXT NOT NULL DEFAULT '',
+  manga_class TEXT NOT NULL DEFAULT '',
+  manga_pic TEXT NOT NULL DEFAULT '',
+  manga_pic_thumb TEXT NOT NULL DEFAULT '',
+  manga_pic_slide TEXT NOT NULL DEFAULT '',
+  manga_pic_screenshot TEXT NOT NULL DEFAULT '',
+  manga_blurb TEXT NOT NULL DEFAULT '',
+  manga_remarks TEXT NOT NULL DEFAULT '',
+  manga_jumpurl TEXT NOT NULL DEFAULT '',
+  manga_tpl TEXT NOT NULL DEFAULT '',
+  manga_level INTEGER NOT NULL DEFAULT 0,
+  manga_lock INTEGER NOT NULL DEFAULT 0,
+  manga_points INTEGER NOT NULL DEFAULT 0,
+  manga_points_detail INTEGER NOT NULL DEFAULT 0,
+  manga_up INTEGER NOT NULL DEFAULT 0,
+  manga_down INTEGER NOT NULL DEFAULT 0,
+  manga_hits INTEGER NOT NULL DEFAULT 0,
+  manga_hits_day INTEGER NOT NULL DEFAULT 0,
+  manga_hits_week INTEGER NOT NULL DEFAULT 0,
+  manga_hits_month INTEGER NOT NULL DEFAULT 0,
+  manga_time INTEGER NOT NULL DEFAULT 0,
+  manga_time_add INTEGER NOT NULL DEFAULT 0,
+  manga_time_hits INTEGER NOT NULL DEFAULT 0,
+  manga_time_make INTEGER NOT NULL DEFAULT 0,
+  manga_score REAL NOT NULL DEFAULT 0,
+  manga_score_all INTEGER NOT NULL DEFAULT 0,
+  manga_score_num INTEGER NOT NULL DEFAULT 0,
+  manga_rel_manga TEXT NOT NULL DEFAULT '',
+  manga_rel_vod TEXT NOT NULL DEFAULT '',
+  manga_pwd TEXT NOT NULL DEFAULT '',
+  manga_pwd_url TEXT NOT NULL DEFAULT '',
+  manga_content TEXT NOT NULL DEFAULT '',
+  manga_serial TEXT NOT NULL DEFAULT '0',
+  manga_total INTEGER NOT NULL DEFAULT 0,
+  manga_chapter_from TEXT NOT NULL DEFAULT '',
+  manga_chapter_url TEXT NOT NULL DEFAULT '',
+  manga_last_update_time INTEGER NOT NULL DEFAULT 0,
+  manga_age_rating INTEGER NOT NULL DEFAULT 0,
+  manga_orientation INTEGER NOT NULL DEFAULT 0,
+  manga_is_vip INTEGER NOT NULL DEFAULT 0,
+  manga_copyright_info TEXT NOT NULL DEFAULT '',
+  manga_recycle_time INTEGER NOT NULL DEFAULT 0,
+  manga_check_state INTEGER NOT NULL DEFAULT 0,
+  manga_check_reason TEXT NOT NULL DEFAULT '',
+  manga_check_time INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_manga_type ON manga(type_id);
+CREATE INDEX IF NOT EXISTS idx_manga_visible_time ON manga(manga_status, manga_time DESC);
+CREATE INDEX IF NOT EXISTS idx_manga_level ON manga(manga_level DESC);
+CREATE INDEX IF NOT EXISTS idx_manga_name ON manga(manga_name);
+
+-- 11. 明星演员表 (Actor - MacCMS v10 核心知识图谱)
 CREATE TABLE IF NOT EXISTS actor (
   actor_id INTEGER PRIMARY KEY AUTOINCREMENT,
   type_id INTEGER NOT NULL DEFAULT 0,
@@ -294,7 +359,7 @@ CREATE TABLE IF NOT EXISTS actor (
 CREATE INDEX IF NOT EXISTS idx_actor_name ON actor(actor_name);
 CREATE INDEX IF NOT EXISTS idx_actor_letter ON actor(actor_letter);
 
--- 11. 影视角色表 (Role - MacCMS v10 角色模型)
+-- 12. 影视角色表 (Role - MacCMS v10 角色模型)
 CREATE TABLE IF NOT EXISTS role (
   role_id INTEGER PRIMARY KEY AUTOINCREMENT,
   role_name TEXT NOT NULL,
@@ -320,7 +385,7 @@ CREATE TABLE IF NOT EXISTS role (
 CREATE INDEX IF NOT EXISTS idx_role_vod ON role(role_vod_id);
 CREATE INDEX IF NOT EXISTS idx_role_actor ON role(role_actor_id);
 
--- 12. 网址导航表 (Website)
+-- 13. 网址导航表 (Website)
 CREATE TABLE IF NOT EXISTS website (
   website_id INTEGER PRIMARY KEY AUTOINCREMENT,
   type_id INTEGER NOT NULL DEFAULT 0,
@@ -338,8 +403,10 @@ CREATE TABLE IF NOT EXISTS website (
   website_time INTEGER NOT NULL DEFAULT 0,
   website_referer INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_website_type ON website(type_id);
+CREATE INDEX IF NOT EXISTS idx_website_visible_sort ON website(website_status, website_level DESC, website_sort ASC);
 
--- 13. 会员用户表 (User)
+-- 14. 会员用户表 (User)
 CREATE TABLE IF NOT EXISTS user (
   user_id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_id INTEGER NOT NULL DEFAULT 1,
@@ -361,7 +428,7 @@ CREATE TABLE IF NOT EXISTS user (
 );
 CREATE INDEX IF NOT EXISTS idx_user_name ON user(user_name);
 
--- 14. 会员组与权限策略表 (User Group)
+-- 15. 会员组与权限策略表 (User Group)
 CREATE TABLE IF NOT EXISTS user_group (
   group_id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_name TEXT NOT NULL,
@@ -374,7 +441,7 @@ CREATE TABLE IF NOT EXISTS user_group (
   group_auth TEXT NOT NULL DEFAULT ''            -- 权限范围 JSON
 );
 
--- 15. 充值卡密表 (Card)
+-- 16. 充值卡密表 (Card)
 CREATE TABLE IF NOT EXISTS card (
   card_id INTEGER PRIMARY KEY AUTOINCREMENT,
   card_no TEXT NOT NULL UNIQUE,
@@ -388,7 +455,7 @@ CREATE TABLE IF NOT EXISTS card (
 );
 CREATE INDEX IF NOT EXISTS idx_card_no ON card(card_no);
 
--- 16. 充值与交易订单表 (Order)
+-- 17. 充值与交易订单表 (Order)
 CREATE TABLE IF NOT EXISTS "order" (
   order_id INTEGER PRIMARY KEY AUTOINCREMENT,
   order_code TEXT NOT NULL UNIQUE,
@@ -400,7 +467,7 @@ CREATE TABLE IF NOT EXISTS "order" (
   order_pay_type TEXT NOT NULL DEFAULT 'manual'
 );
 
--- 17. 会员足迹与消费日志表 (Ulog)
+-- 18. 会员足迹与消费日志表 (Ulog)
 CREATE TABLE IF NOT EXISTS ulog (
   ulog_id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -414,7 +481,7 @@ CREATE TABLE IF NOT EXISTS ulog (
 );
 CREATE INDEX IF NOT EXISTS idx_ulog_user ON ulog(user_id, ulog_type, ulog_mid);
 
--- 18. 留言与求片报错反馈表 (Gbook)
+-- 19. 留言与求片报错反馈表 (Gbook)
 CREATE TABLE IF NOT EXISTS gbook (
   gbook_id INTEGER PRIMARY KEY AUTOINCREMENT,
   gbook_mid INTEGER NOT NULL DEFAULT 1,
@@ -433,7 +500,7 @@ CREATE TABLE IF NOT EXISTS gbook (
 );
 CREATE INDEX IF NOT EXISTS idx_gbook_status ON gbook(gbook_status);
 
--- 19. 评论与互动表 (Comment)
+-- 20. 评论与互动表 (Comment)
 CREATE TABLE IF NOT EXISTS comment (
   comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
   comment_mid INTEGER NOT NULL DEFAULT 1, -- 1=vod, 2=art, 3=topic
@@ -451,7 +518,7 @@ CREATE TABLE IF NOT EXISTS comment (
 );
 CREATE INDEX IF NOT EXISTS idx_comment_rid ON comment(comment_mid, comment_rid);
 
--- 20. 友情链接表 (Link)
+-- 21. 友情链接表 (Link)
 CREATE TABLE IF NOT EXISTS link (
   link_id INTEGER PRIMARY KEY AUTOINCREMENT,
   link_name TEXT NOT NULL,
@@ -462,7 +529,7 @@ CREATE TABLE IF NOT EXISTS link (
   link_status INTEGER NOT NULL DEFAULT 1
 );
 
--- 21. 广告位管理表 (Ads)
+-- 22. 广告位管理表 (Ads)
 CREATE TABLE IF NOT EXISTS ads (
   ads_id INTEGER PRIMARY KEY AUTOINCREMENT,
   ads_key TEXT NOT NULL UNIQUE,       -- 广告位标识 如 banner, player_pause, footer
@@ -473,7 +540,7 @@ CREATE TABLE IF NOT EXISTS ads (
   ads_time INTEGER NOT NULL DEFAULT 0
 );
 
--- 22. 主题配置表 (Theme Config - 移植自海螺影视 Conch_M003 主题后台配置)
+-- 23. 主题配置表 (Theme Config - 移植自海螺影视 Conch_M003 主题后台配置)
 CREATE TABLE IF NOT EXISTS theme_config (
   cfg_key TEXT PRIMARY KEY,
   cfg_value TEXT NOT NULL DEFAULT '',
@@ -483,13 +550,13 @@ CREATE TABLE IF NOT EXISTS theme_config (
 );
 CREATE INDEX IF NOT EXISTS idx_theme_group ON theme_config(cfg_group);
 
--- 23. 全局键值配置表 (Config)
+-- 24. 全局键值配置表 (Config)
 CREATE TABLE IF NOT EXISTS config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
 
--- 24. 采集断点记录表 (Cj History)
+-- 25. 采集断点记录表 (Cj History)
 CREATE TABLE IF NOT EXISTS cj_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   node_id INTEGER NOT NULL,
@@ -499,6 +566,75 @@ CREATE TABLE IF NOT EXISTS cj_history (
   last_time INTEGER NOT NULL DEFAULT 0,
   status INTEGER NOT NULL DEFAULT 0
 );
+
+-- 26. MacCMS10 直播分类与频道 (Cloudflare D1 实现)
+CREATE TABLE IF NOT EXISTS live_category (
+  live_category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  live_category_name TEXT NOT NULL,
+  live_category_sort INTEGER NOT NULL DEFAULT 0,
+  live_category_status INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_live_category_status_sort
+  ON live_category(live_category_status, live_category_sort, live_category_id);
+CREATE TABLE IF NOT EXISTS live_channel (
+  live_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  live_category_id INTEGER NOT NULL DEFAULT 0,
+  live_name TEXT NOT NULL,
+  live_url TEXT NOT NULL,
+  live_logo TEXT NOT NULL DEFAULT '',
+  live_desc TEXT NOT NULL DEFAULT '',
+  live_status INTEGER NOT NULL DEFAULT 1,
+  live_sort INTEGER NOT NULL DEFAULT 0,
+  live_time INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_live_channel_status_sort
+  ON live_channel(live_status, live_sort, live_id);
+CREATE INDEX IF NOT EXISTS idx_live_channel_category
+  ON live_channel(live_category_id, live_status, live_sort);
+
+-- 27. 后台操作审计、内容访问统计与 URL 推送历史
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_name TEXT NOT NULL DEFAULT '', method TEXT NOT NULL DEFAULT '',
+  path TEXT NOT NULL DEFAULT '', response_status INTEGER NOT NULL DEFAULT 0,
+  client_ip TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at DESC);
+CREATE TABLE IF NOT EXISTS traffic_event (
+  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  model TEXT NOT NULL, content_id INTEGER NOT NULL DEFAULT 0,
+  visitor_hash TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0,
+  day TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_traffic_day_model ON traffic_event(day, model);
+CREATE INDEX IF NOT EXISTS idx_traffic_content ON traffic_event(model, content_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS url_push_log (
+  push_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  model TEXT NOT NULL DEFAULT '', submitted INTEGER NOT NULL DEFAULT 0,
+  success INTEGER NOT NULL DEFAULT 0, remain INTEGER NOT NULL DEFAULT 0,
+  status INTEGER NOT NULL DEFAULT 0, response TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_url_push_created ON url_push_log(created_at DESC);
+CREATE TABLE IF NOT EXISTS collect_run_log (
+  run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  node_id INTEGER NOT NULL DEFAULT 0, node_name TEXT NOT NULL DEFAULT '',
+  hours INTEGER NOT NULL DEFAULT 24, page INTEGER NOT NULL DEFAULT 1,
+  fetched INTEGER NOT NULL DEFAULT 0, inserted INTEGER NOT NULL DEFAULT 0,
+  updated INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0,
+  success INTEGER NOT NULL DEFAULT 1, message TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_collect_run_created ON collect_run_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_collect_run_node ON collect_run_log(node_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS user_login_log (
+  login_log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL DEFAULT 0, user_name TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL DEFAULT 'login', client_ip TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_user_login_created ON user_login_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_login_user ON user_login_log(user_id, created_at DESC);
 
 -- ========================================================
 -- 预设默认数据 (分类、播放器、会员组、广告位、配置等)
@@ -715,3 +851,375 @@ INSERT OR IGNORE INTO link (link_id, link_name, link_url, link_sort) VALUES
 (1, 'Cloudflare D1 官网', 'https://developers.cloudflare.com/d1/', 1),
 (2, 'Hono 极速框架', 'https://hono.dev/', 2),
 (3, 'DPlayer 播放器', 'https://dplayer.diygod.dev/', 3);
+-- Cloudflare-native parity modules: D1-backed commerce, interaction, moderation,
+-- edge scheduling, administrator roles, and optional R2 media metadata.
+CREATE TABLE IF NOT EXISTS admin_role (
+  role_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  role_key TEXT NOT NULL UNIQUE,
+  role_name TEXT NOT NULL,
+  permissions TEXT NOT NULL DEFAULT '[]',
+  role_status INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS admin_account (
+  admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role_key TEXT NOT NULL DEFAULT 'administrator',
+  status INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  last_login_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_admin_account_role ON admin_account(role_key, status);
+INSERT OR IGNORE INTO admin_role (role_key, role_name, permissions) VALUES
+  ('administrator', '超级管理员', '["*"]'),
+  ('editor', '内容编辑', '["content","collect"]'),
+  ('support', '会员客服', '["users","ops"]');
+
+CREATE TABLE IF NOT EXISTS user_follow (
+  follow_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  follow_mid INTEGER NOT NULL DEFAULT 1,
+  follow_rid INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(user_id, follow_mid, follow_rid)
+);
+CREATE INDEX IF NOT EXISTS idx_follow_user ON user_follow(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS danmaku (
+  danmaku_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL DEFAULT 0,
+  user_name TEXT NOT NULL DEFAULT '访客',
+  vod_id INTEGER NOT NULL DEFAULT 0,
+  episode_id INTEGER NOT NULL DEFAULT 0,
+  position_ms INTEGER NOT NULL DEFAULT 0,
+  color TEXT NOT NULL DEFAULT '#ffffff',
+  content TEXT NOT NULL,
+  status INTEGER NOT NULL DEFAULT 0,
+  client_ip TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_danmaku_vod ON danmaku(vod_id, episode_id, status, position_ms);
+CREATE TABLE IF NOT EXISTS chatroom_message (
+  message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_key TEXT NOT NULL DEFAULT 'default',
+  user_id INTEGER NOT NULL DEFAULT 0,
+  user_name TEXT NOT NULL DEFAULT '访客',
+  content TEXT NOT NULL,
+  status INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_chatroom_created ON chatroom_message(room_key, status, created_at DESC);
+CREATE TABLE IF NOT EXISTS user_pm (
+  pm_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sender_id INTEGER NOT NULL DEFAULT 0,
+  receiver_id INTEGER NOT NULL DEFAULT 0,
+  content TEXT NOT NULL,
+  is_read INTEGER NOT NULL DEFAULT 0,
+  status INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pm_receiver ON user_pm(receiver_id, status, created_at DESC);
+CREATE TABLE IF NOT EXISTS share_log (
+  share_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL DEFAULT 0,
+  model TEXT NOT NULL DEFAULT 'vod',
+  content_id INTEGER NOT NULL DEFAULT 0,
+  channel TEXT NOT NULL DEFAULT '',
+  client_ip TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_share_created ON share_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS cash_log (
+  cash_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL DEFAULT 0,
+  cash_type TEXT NOT NULL DEFAULT 'admin_adjustment',
+  amount REAL NOT NULL DEFAULT 0,
+  points INTEGER NOT NULL DEFAULT 0,
+  status INTEGER NOT NULL DEFAULT 1,
+  note TEXT NOT NULL DEFAULT '',
+  operator TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_cash_user ON cash_log(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS coupon (
+  coupon_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coupon_code TEXT NOT NULL UNIQUE,
+  coupon_name TEXT NOT NULL,
+  discount_type TEXT NOT NULL DEFAULT 'fixed',
+  discount_value REAL NOT NULL DEFAULT 0,
+  min_spend REAL NOT NULL DEFAULT 0,
+  max_uses INTEGER NOT NULL DEFAULT 1,
+  used_count INTEGER NOT NULL DEFAULT 0,
+  starts_at INTEGER NOT NULL DEFAULT 0,
+  ends_at INTEGER NOT NULL DEFAULT 0,
+  status INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS user_coupon (
+  user_coupon_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coupon_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  redeemed_at INTEGER NOT NULL DEFAULT 0,
+  used_at INTEGER NOT NULL DEFAULT 0,
+  order_id INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(coupon_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_coupon_user ON user_coupon(user_id, used_at);
+CREATE TABLE IF NOT EXISTS mall_goods (
+  goods_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  goods_name TEXT NOT NULL,
+  goods_desc TEXT NOT NULL DEFAULT '',
+  goods_pic TEXT NOT NULL DEFAULT '',
+  price REAL NOT NULL DEFAULT 0,
+  points INTEGER NOT NULL DEFAULT 0,
+  inventory INTEGER NOT NULL DEFAULT 0,
+  status INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS mall_order (
+  mall_order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_code TEXT NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL,
+  goods_id INTEGER NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  total_price REAL NOT NULL DEFAULT 0,
+  total_points INTEGER NOT NULL DEFAULT 0,
+  status INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  user_coupon_id INTEGER NOT NULL DEFAULT 0,
+  discount_amount REAL NOT NULL DEFAULT 0,
+  seckill_id INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_mall_order_status ON mall_order(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mall_order_user ON mall_order(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mall_order_coupon ON mall_order(user_coupon_id, status);
+CREATE INDEX IF NOT EXISTS idx_mall_order_seckill ON mall_order(seckill_id, status);
+CREATE TRIGGER IF NOT EXISTS mall_order_coupon_validate_before_insert
+BEFORE INSERT ON mall_order
+WHEN NEW.user_coupon_id > 0
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM user_coupon uc JOIN coupon c ON c.coupon_id = uc.coupon_id
+    WHERE uc.user_coupon_id = NEW.user_coupon_id
+      AND uc.user_id = NEW.user_id
+      AND uc.used_at = 0
+      AND uc.order_id = 0
+      AND c.status = 1
+      AND (c.starts_at = 0 OR c.starts_at <= NEW.created_at)
+      AND (c.ends_at = 0 OR c.ends_at >= NEW.created_at)
+  ) THEN RAISE(ABORT, '优惠券已使用或正在其他订单中') END;
+END;
+CREATE TRIGGER IF NOT EXISTS mall_order_coupon_reserve_after_insert
+AFTER INSERT ON mall_order
+WHEN NEW.user_coupon_id > 0
+BEGIN
+  UPDATE user_coupon SET order_id = NEW.mall_order_id,
+    used_at = CASE WHEN NEW.status = 1 THEN NEW.created_at ELSE used_at END
+  WHERE user_coupon_id = NEW.user_coupon_id AND user_id = NEW.user_id;
+END;
+CREATE TRIGGER IF NOT EXISTS mall_order_points_ledger_after_insert
+AFTER INSERT ON mall_order
+WHEN NEW.total_points > 0
+BEGIN
+  INSERT INTO cash_log (user_id,cash_type,amount,points,status,note,operator,created_at)
+  VALUES (NEW.user_id,'mall_purchase',0,-NEW.total_points,1,NEW.order_code,'system',NEW.created_at);
+END;
+CREATE TRIGGER IF NOT EXISTS mall_order_coupon_paid_after_update
+AFTER UPDATE OF status ON mall_order
+WHEN OLD.status = 0 AND NEW.status = 1 AND NEW.user_coupon_id > 0
+BEGIN
+  UPDATE user_coupon SET used_at = NEW.updated_at
+  WHERE user_coupon_id = NEW.user_coupon_id AND order_id = NEW.mall_order_id AND used_at = 0;
+END;
+CREATE TRIGGER IF NOT EXISTS mall_order_cancel_refund_after_update
+AFTER UPDATE OF status ON mall_order
+WHEN OLD.status = 0 AND NEW.status = 3
+BEGIN
+  UPDATE mall_goods SET inventory = inventory + NEW.quantity WHERE goods_id = NEW.goods_id;
+  UPDATE user SET user_points = user_points + NEW.total_points WHERE user_id = NEW.user_id;
+  UPDATE user_coupon SET order_id = 0
+  WHERE user_coupon_id = NEW.user_coupon_id AND order_id = NEW.mall_order_id AND used_at = 0;
+  INSERT INTO cash_log (user_id,cash_type,amount,points,status,note,operator,created_at)
+  SELECT NEW.user_id,'mall_refund',0,NEW.total_points,1,NEW.order_code,'system',NEW.updated_at
+  WHERE NEW.total_points > 0;
+END;
+CREATE TABLE IF NOT EXISTS seckill_campaign (
+  campaign_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  campaign_name TEXT NOT NULL,
+  goods_id INTEGER NOT NULL,
+  sale_price REAL NOT NULL DEFAULT 0,
+  inventory INTEGER NOT NULL DEFAULT 0,
+  starts_at INTEGER NOT NULL DEFAULT 0,
+  ends_at INTEGER NOT NULL DEFAULT 0,
+  status INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_seckill_active ON seckill_campaign(status, starts_at, ends_at);
+CREATE INDEX IF NOT EXISTS idx_seckill_goods ON seckill_campaign(goods_id, status);
+CREATE TRIGGER IF NOT EXISTS mall_order_seckill_validate_before_insert
+BEFORE INSERT ON mall_order
+WHEN NEW.seckill_id > 0
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM seckill_campaign
+    WHERE campaign_id = NEW.seckill_id
+      AND goods_id = NEW.goods_id
+      AND status = 1
+      AND (starts_at = 0 OR starts_at <= NEW.created_at)
+      AND (ends_at = 0 OR ends_at >= NEW.created_at)
+  ) THEN RAISE(ABORT, '秒杀活动未开始、已结束或已停用') END;
+END;
+CREATE TRIGGER IF NOT EXISTS mall_order_seckill_cancel_restore
+AFTER UPDATE OF status ON mall_order
+WHEN OLD.status = 0 AND NEW.status = 3 AND NEW.seckill_id > 0
+BEGIN
+  UPDATE seckill_campaign SET inventory = inventory + NEW.quantity WHERE campaign_id = NEW.seckill_id;
+END;
+CREATE TABLE IF NOT EXISTS site_notice (
+  notice_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  notice_type TEXT NOT NULL DEFAULT 'site',
+  status INTEGER NOT NULL DEFAULT 1,
+  starts_at INTEGER NOT NULL DEFAULT 0,
+  ends_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS sign_log (
+  sign_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  sign_day TEXT NOT NULL,
+  points INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(user_id, sign_day)
+);
+CREATE INDEX IF NOT EXISTS idx_sign_day ON sign_log(sign_day, user_id);
+CREATE TRIGGER IF NOT EXISTS sign_log_credit_after_insert
+AFTER INSERT ON sign_log
+BEGIN
+  UPDATE user SET user_points = user_points + NEW.points WHERE user_id = NEW.user_id;
+  INSERT INTO cash_log (user_id, cash_type, amount, points, status, note, operator, created_at)
+    VALUES (NEW.user_id, 'daily_sign', 0, NEW.points, 1, '每日签到奖励', 'system', NEW.created_at);
+END;
+CREATE TABLE IF NOT EXISTS vod_play_fail (
+  fail_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  vod_id INTEGER NOT NULL DEFAULT 0,
+  vod_name TEXT NOT NULL DEFAULT '',
+  play_from TEXT NOT NULL DEFAULT '',
+  play_part TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  client_ip TEXT NOT NULL DEFAULT '',
+  status INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_play_fail_created ON vod_play_fail(status, created_at DESC);
+CREATE TABLE IF NOT EXISTS content_check_rule (
+  rule_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_name TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT 'vod',
+  field_name TEXT NOT NULL DEFAULT 'name',
+  match_text TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'warning',
+  status INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS content_check_issue (
+  issue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_id INTEGER NOT NULL,
+  model TEXT NOT NULL,
+  content_id INTEGER NOT NULL,
+  content_name TEXT NOT NULL DEFAULT '',
+  field_name TEXT NOT NULL DEFAULT '',
+  excerpt TEXT NOT NULL DEFAULT '',
+  status INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(rule_id, model, content_id, field_name)
+);
+CREATE INDEX IF NOT EXISTS idx_content_issue_status ON content_check_issue(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS scheduled_task (
+  task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_name TEXT NOT NULL,
+  task_type TEXT NOT NULL DEFAULT 'collect',
+  node_id INTEGER NOT NULL DEFAULT 0,
+  interval_minutes INTEGER NOT NULL DEFAULT 60,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  next_run_at INTEGER NOT NULL DEFAULT 0,
+  last_run_at INTEGER NOT NULL DEFAULT 0,
+  last_status TEXT NOT NULL DEFAULT '',
+  last_message TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_task_due ON scheduled_task(enabled, next_run_at);
+CREATE TABLE IF NOT EXISTS scheduled_task_log (
+  task_log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL DEFAULT 0,
+  task_name TEXT NOT NULL DEFAULT '',
+  success INTEGER NOT NULL DEFAULT 0,
+  message TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_task_log ON scheduled_task_log(created_at DESC);
+CREATE TABLE IF NOT EXISTS media_asset (
+  media_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  object_key TEXT NOT NULL UNIQUE,
+  file_name TEXT NOT NULL DEFAULT '',
+  content_type TEXT NOT NULL DEFAULT '',
+  file_size INTEGER NOT NULL DEFAULT 0,
+  public_url TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_media_created ON media_asset(created_at DESC);
+CREATE TABLE IF NOT EXISTS user_access_rule (
+  rule_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_type TEXT NOT NULL DEFAULT 'ip',
+  rule_value TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  expires_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(rule_type, rule_value)
+);
+CREATE INDEX IF NOT EXISTS idx_access_rule_value ON user_access_rule(rule_type, rule_value);
+CREATE TABLE IF NOT EXISTS recycle_bin (
+  recycle_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  model TEXT NOT NULL,
+  record_id INTEGER NOT NULL,
+  record_json TEXT NOT NULL,
+  deleted_by TEXT NOT NULL DEFAULT '',
+  deleted_at INTEGER NOT NULL DEFAULT 0,
+  restored_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_recycle_model ON recycle_bin(model, deleted_at DESC);
+
+CREATE TABLE IF NOT EXISTS sign_milestone (
+  milestone_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sign_days INTEGER NOT NULL UNIQUE,
+  reward_name TEXT NOT NULL DEFAULT '',
+  reward_points INTEGER NOT NULL DEFAULT 0,
+  status INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS user_sign_milestone (
+  claim_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  milestone_id INTEGER NOT NULL,
+  sign_days INTEGER NOT NULL,
+  reward_name TEXT NOT NULL DEFAULT '',
+  reward_points INTEGER NOT NULL DEFAULT 0,
+  claimed_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(user_id, milestone_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_sign_milestone_user ON user_sign_milestone(user_id, claimed_at DESC);
+CREATE TRIGGER IF NOT EXISTS sign_milestone_credit_after_insert
+AFTER INSERT ON user_sign_milestone
+BEGIN
+  UPDATE user SET user_points = user_points + NEW.reward_points WHERE user_id = NEW.user_id;
+  INSERT INTO cash_log (user_id,cash_type,amount,points,status,note,operator,created_at)
+    VALUES (NEW.user_id,'sign_milestone',0,NEW.reward_points,1,NEW.reward_name,'system',NEW.claimed_at);
+END;

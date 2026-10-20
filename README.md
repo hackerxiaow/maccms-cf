@@ -11,25 +11,35 @@
    - **极速冷启动**：运行于 Cloudflare 全球 Anycast 边缘网络，冷启动低至毫秒级。
    - **零服务器成本**：无须配置 Linux 服务器、PHP-FPM、Nginx 或 MySQL，纯边缘驱动。
    - **原生 D1 数据库**：采用 Cloudflare D1 边缘 SQLite 数据库，读写性能极高并支持本地离线仿真。
-2. **MacCMS 官方生态 100% 协议兼容**
+2. **MacCMS 核心采集协议兼容**
    - **经典播放列表编解码**：完美兼容 `$$$`（播放源分组）、`#`（分集分隔符）、`$`（单集信息 `集数$URL$独立标识`）规范。
    - **双格式对外输出 (Provide API)**：提供 `/api.php/provide/vod/` 与 `/provide/vod/`，支持 `at=json` 与 `at=xml`（标准 MacCMS RSS 5.1/2.0 XML 格式），任何外部采集站或客户端可无缝对接。
    - **定时采集端点 (Timming API)**：提供 `/api.php/timming/index`，可直接配合 Cloudflare Cron Trigger、外部 Crontab 或云监控调用。
 3. **融合 MacCMS v10 增强特性**
-   - **统一树形分类模型 (`type_mid`)**：支持多层级父子继承与拼音别名。
+   - **统一树形分类模型 (`type_mid`)**：支持视频、文章、专题、明星、角色、网址与漫画 (`type_mid=12`) 分类。
    - **影视知识图谱字段**：全面支持演员、导演、编剧、一句话简介、完结状态与豆瓣评分同步。
    - **智能去重合并算法 (`urlrole=1`)**：采集入库遇到同名剧目时，自动保留本地已有集数并追加远程更新集数，遇到远程新播放源自动平滑并网，绝不丢失本地数据。
    - **独立播放器沙箱解析**：原生支持 DPlayer + HLS.js 极速硬解，并支持为不同播放线路配置外部通用 VIP 智能解析接口（Iframe 沙箱隔离运行）。
    - **毫秒级搜索联想补全**：提供 `/api/vod/suggest` 即时前缀联想接口。
 4. **全端响应式界面与单页管理控制台**
    - **终端前台**：采用移植自 **海螺影视 Conch_M003** 主题的 `hl-` 组件体系与视觉设计，覆盖 PC 与移动端。
-   - **后台管理系统**：开箱即用的 Web 管理面板（访问 `/admin`），集数据统计、视频增删改查、分类树编辑、采集源管理、分类映射绑定、即时采集与播放器配置于一体。
+   - **后台管理系统**：开箱即用的 Web 管理面板（访问 `/admin`），按 MacCMS v10 的顶部主模块、左侧子菜单和多标签工作区组织；覆盖视频、文章、专题、漫画、明星/角色、网址导航、直播频道、会员组、会员、订单、卡密、反馈、评论、广告友链、主题、访问统计、后台操作审计、会员登录/足迹、采集运行记录、百度 URL 推送、D1 JSON 备份还原、多管理员角色权限、R2 媒体库、内容回收站、质检规则、边缘定时任务、签到里程碑/私信/弹幕/聊天室、优惠券、积分商城与限时秒杀、积分流水和会员访问限制。
 
 5. **海螺影视主题 Conch_M003 深度移植**
-   - **全站前台页面**：首页 / 影视详情 / 在线播放 / 分类列表（含多维筛选）/ 排行榜 / 专题 / 资讯 / 搜索，全部按海螺模板的结构与类名体系重建。
+   - **全站前台页面**：首页 / 影视详情 / 在线播放 / 分类列表（含多维筛选）/ 排行榜 / 专题 / 资讯 / 网址导航 / 搜索，全部按海螺模板的结构与类名体系重建。
    - **双皮肤切换**：内置 `white.css` / `black.css` 深浅两套皮肤，用户可在页脚一键切换并记住选择（`localStorage`）。
    - **95 项主题配置全部后台可视化**：原本写在 `conchvip.php` 的主题参数（主色、副色、图片圆角、首页各区块开关与数量、导航项、筛选维度、详情页背景图、播放器比例、排行榜参数等）已迁入后台「主题全局配置」，保存后前台即时生效、无需重新部署。
    - **零外部依赖图标**：内置 136 个 `hl-icon-*` 图标字体（base64 内联 woff2），不依赖任何 CDN。
+
+### 后台升级与数据库迁移
+
+后台包含 MacCMS v10 风格的主模块导航、移动端抽屉导航、侧栏折叠和多标签工作区。漫画管理使用 `type_mid=12`，支持完整资料编辑、章节地址、多状态筛选和批量操作。
+
+新增 D1 数据表通过 `migrations/` 下的顺序迁移文件维护。开发环境运行 `npm run d1:migrate`；部署数据库更新后运行 `npm run d1:migrate-remote`。漫画、云端运营模块和商城结账分别由后续迁移补齐；Worker 与 Pages 必须对同一个 D1 实例按顺序执行迁移。
+
+后台扩展按 Cloudflare 能力实现：Cron 采集和手动采集共用运行日志；内容访问统计只记录成功的详情页访问，并按日哈希访客 IP；`/sitemap.xml` 生成当前前台真实存在的详情地址。数据库页提供白名单业务表 JSON 导出和分批还原；内容删除先进 D1 回收站；后台角色权限在 API 层校验；R2 图片库需要绑定媒体桶。商城支持领券、下单抵扣、秒杀活动、待核款、管理员确认、履约完成与取消；取消时 D1 触发器会退回商品/活动库存和积分、释放优惠券并记入积分流水。连续签到达到后台配置的里程碑后会自动发放一次奖励。定时任务由固定的 Workers Cron 每 5 分钟检查一次 D1 任务计划。
+
+同一套 Hono Worker 入口也提供 Cloudflare Pages Functions 适配器：`functions/[[path]].ts` 将 Pages 请求交给 Worker，静态文件经 Pages `ASSETS` 绑定返回。Workers 运行方式使用 `wrangler.toml`；Pages 方式使用独立的 `wrangler.pages.toml`，两边共享 `src/` 与 `migrations/`。
 
 ---
 
@@ -84,10 +94,13 @@ public/static/theme/
 ```text
 maccms-cf/
 ├── schema.sql                 # D1 数据库初始化结构与预设种子数据
-├── wrangler.toml              # Cloudflare Workers / D1 / Cron 配置文件
+├── wrangler.toml              # Cloudflare Workers / D1 / R2 / Cron 配置文件
+├── wrangler.pages.toml        # Cloudflare Pages Functions / D1 / R2 配置文件
+├── functions/[[path]].ts      # Pages Functions 适配入口
 ├── package.json               # 项目依赖声明
 ├── tsconfig.json              # TypeScript 编译配置
 ├── README.md                  # 本文档
+├── migrations/                # D1 顺序迁移（含漫画、后台扩展和云端运营表）
 ├── src/
 │   ├── index.ts               # Worker 主入口 (Hono 路由挂载与 Cron 触发处理)
 │   ├── types/
@@ -112,6 +125,8 @@ maccms-cf/
 │   ├── type.html              # 分类列表 (海螺多维筛选器)
 │   ├── rank.html              # 排行榜 (总榜/月榜/周榜/评分榜)
 │   ├── topic.html             # 专题列表与详情
+│   ├── website.html           # 网址目录与分类筛选
+│   ├── live.html              # 直播频道分类与播放器
 │   ├── art.html               # 资讯列表与详情
 │   ├── search.html            # 搜索 (影视 / 资讯)
 │   ├── admin/
@@ -147,7 +162,9 @@ npm install
 ```bash
 npx wrangler d1 execute maccms-db --local --file=./schema.sql
 ```
-> 若已有旧库需要升级，依次执行 `test/migrate-01-slide.sql`（横版剧照字段）与 `test/migrate-02-theme.sql`（主题配置表）。
+> 若已有旧库需要升级，执行 `npm run d1:migrate`；线上执行 `npm run d1:migrate-remote`。迁移按文件名顺序补齐漫画、直播、日志与推送表。
+
+Pages 本地开发可运行 `npm run pages:dev`。Pages 部署前把 `wrangler.pages.toml` 中的 `database_id` 换成真实 D1 ID，并创建 R2 桶 `maccms-media`；再执行 `npm run d1:pages:migrate` 和 `npm run pages:deploy`。Worker 部署使用 `npm run d1:migrate-remote` 与 `npm run deploy`。两个配置文件分别维护资源绑定，数据库 ID 和站点变量需要保持一致。
 
 ### 3. 运行本地开发服务
 ```bash
@@ -215,7 +232,7 @@ Wrangler 会自动打包 TypeScript 代码及 `public/` 下的静态资源，并
 
 ### 3. 自动化定时采集配置
 - **方式一（Cloudflare Cron 原生定时触发）**：
-  在 `wrangler.toml` 中已开启 `[triggers] crons = ["0 * * * *"]`，部署后 Cloudflare 将每小时自动触发增量同步。
+  在 `wrangler.toml` 中已开启 `[triggers] crons = ["*/5 * * * *"]`；部署后 Worker 每 5 分钟检查 D1 任务计划，并按采集节点间隔运行到期任务。
 - **方式二（外部计划任务）**：
   使用宝塔、Linux crontab、GitHub Actions 或外部云监控定时请求：
   ```bash
@@ -248,15 +265,37 @@ Wrangler 会自动打包 TypeScript 代码及 `public/` 下的静态资源，并
 | `/api.php/provide/vod/?ac=videolist&h=24` | GET | 今日更新影视详情列表 (含播放源与全量集数) |
 | `/api.php/provide/art/?ac=list` | GET | 文章资讯对外提供接口 |
 | `/api.php/timming/index` | GET | 定时采集调度入口 (支持 `h=24` 时间跨度) |
+| `/api/user/sign` | POST | 会员每日签到积分与连续签到里程碑奖励 |
+| `/api/user/follows/toggle` | POST | 关注或取消关注内容 |
+| `/api/danmaku/list`、`/api/danmaku/add` | GET / POST | 弹幕读取与审核提交 |
+| `/api/chatroom/messages`、`/api/chatroom/send` | GET / POST | 聊天室消息读取与发送 |
+| `/api/user/messages` | GET / POST | 会员站内私信 |
+| `/api/user/coupons/redeem` | POST | 兑换优惠券 |
+| `/api/mall/goods`、`/api/mall/orders` | GET / POST | 积分商品和商城订单；创建订单可传 `user_coupon_id` 抵扣现金部分 |
+| `/api/mall/seckill` | GET | 当前生效且有库存的秒杀活动 |
+| `/api/mall/orders/:id/cancel` | POST | 取消本人待核款订单，自动回退积分、库存与优惠券 |
+| `/api/vod/play-fail` | POST | 播放报错反馈 |
+
+### Cloudflare 运行边界
+
+Workers/Pages 运行环境没有 PHP-FPM、MySQL 文件、可写的 Pages 模板目录或主机操作系统，因此不提供 PHP 插件安装/执行、模板文件在线编辑、MySQL 任意 SQL 控制台、本机文件备份、CPU/磁盘监控，也不能在后台直接改写已部署的静态模板文件。D1 JSON 备份、主题参数、R2 媒体存储、Worker 健康检查和受控 SQL 数据迁移是对应的云端方案。商城订单支持积分扣款和线下收款核验；银行卡/第三方支付、邮件短信、AI 生成和搜索服务需要另配供应商与密钥。
 | `/api/vod/list` | GET | 影视分页列表（参数：`page` `limit` `type_id` `by` `wd` `letter` `year` `area` `vod_class` `vod_lang` `state`） |
 | `/api/vod/detail/:id` | GET | 影视详情（返回已解析的 `play_groups` 多线路选集） |
 | `/api/vod/banners` | GET | 首页焦点图推荐（按播放量） |
+| `/api/live/categories` | GET | 直播分类 |
+| `/api/live/list` | GET | 已启用直播频道分页列表（支持 `page` `limit` `category_id`） |
+| `/sitemap.xml` | GET | 按当前前台真实详情页地址生成 XML Sitemap |
+
+后台新增的 MacCMS10 运维能力位于「直播管理」「运营互动」「系统管理」「会员中心」和「采集配置」：直播分类/频道维护、百度主动 URL 推送、访问统计、管理员写操作审计、会员登录记录与足迹、每日签到与连续签到奖励、定时/手动采集日志、D1 业务表 JSON 备份还原。更新已有数据库时执行 `npm run d1:migrate`（线上执行 `npm run d1:migrate-remote`）。
 | `/api/vod/rankings` | GET | 今日热播 / 每周热播 / 口碑高分三组榜单 |
 | `/api/vod/filters/:typeId` | GET | 分类页多维筛选字典（年份、地区、语言、类型、状态、字母） |
 | `/api/vod/suggest?wd=片名` | GET | 搜索框联想词毫秒级实时补全 |
 | `/api/types` | GET | 全站父子分类树 |
 | `/api/art/list` · `/api/art/detail/:id` | GET | 文章资讯列表与详情 |
 | `/api/topic/list` · `/api/topic/detail/:id` | GET | 影视专题列表与详情 |
+| `/api/website/list` · `/api/website/detail/:id` · `/api/website/go/:id` | GET | 网址导航列表、详情与计数跳转 |
+| `/api.php/provide/website/?ac=list` | GET | MacCMS 兼容网址导航 JSON 接口（支持 `&at=xml`） |
+| `/api/admin/order/list` | GET | 后台订单分页、状态筛选和订单号/会员搜索 |
 | `/api/comment/list` · `/api/comment/add` | GET / POST | 影评读取与发表 |
 | `/api/links` | GET | 友情链接 |
 | `/api/players` | GET | 启用中的播放器编码及其解析接口列表 |

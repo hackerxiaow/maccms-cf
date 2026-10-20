@@ -11,7 +11,8 @@ export class UserService {
    */
   static async register(
     db: D1Database,
-    data: { username: string; password: string; email?: string; phone?: string; nick?: string }
+    data: { username: string; password: string; email?: string; phone?: string; nick?: string },
+    ip = ''
   ): Promise<UserItem> {
     const username = (data.username || '').trim();
     const password = (data.password || '').trim();
@@ -47,6 +48,9 @@ export class UserService {
     ).run();
 
     const userId = Number(res.meta.last_row_id);
+    await db.prepare(`INSERT INTO user_login_log (user_id, user_name, action, client_ip, created_at)
+      VALUES (?, ?, 'register', ?, ?)`)
+      .bind(userId, username, ip, now).run();
     return {
       user_id: userId,
       group_id: 1,
@@ -58,7 +62,7 @@ export class UserService {
       user_points: regPoints,
       user_reg_time: now,
       user_login_time: now,
-      user_login_ip: '',
+      user_login_ip: ip,
       user_last_login_time: 0,
       user_last_login_ip: '',
       user_login_num: 1,
@@ -94,7 +98,8 @@ export class UserService {
     if (row.user_pwd !== pwdHash) throw new Error('密码错误');
 
     const now = Math.floor(Date.now() / 1000);
-    await db.prepare(`
+    await db.batch([
+      db.prepare(`
       UPDATE user SET
         user_last_login_time = user_login_time,
         user_last_login_ip = user_login_ip,
@@ -102,7 +107,11 @@ export class UserService {
         user_login_ip = ?,
         user_login_num = user_login_num + 1
       WHERE user_id = ?
-    `).bind(now, ip, row.user_id).run();
+      `).bind(now, ip, row.user_id),
+      db.prepare(`INSERT INTO user_login_log (user_id, user_name, action, client_ip, created_at)
+        VALUES (?, ?, 'login', ?, ?)`)
+        .bind(row.user_id, row.user_name, ip, now),
+    ]);
 
     delete row.user_pwd;
 

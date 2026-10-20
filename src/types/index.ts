@@ -5,6 +5,7 @@
 export type Bindings = {
   DB: D1Database;
   ASSETS?: Fetcher;
+  MEDIA_BUCKET?: R2Bucket;
   SITE_NAME?: string;
   SITE_URL?: string;
   ADMIN_PASSWORD?: string;
@@ -16,7 +17,7 @@ export interface TypeItem {
   type_name: string;
   type_en: string;
   type_sort: number;
-  type_mid: number; // 1=视频, 2=文章, 3=专题, 8=明星, 9=角色, 11=网址
+  type_mid: number; // 1=视频, 2=文章, 3=专题, 8=明星, 9=角色, 11=网址, 12=漫画
   type_pid: number; // 父分类ID (0为一级分类)
   type_status: number;
   type_tpl?: string;
@@ -32,6 +33,53 @@ export interface TypeItem {
   type_union?: string;
   type_extend?: string;
   children?: TypeItem[];
+}
+
+export interface MangaItem {
+  manga_id: number;
+  type_id: number;
+  type_id_1: number;
+  type_name?: string;
+  group_id: number;
+  manga_name: string;
+  manga_sub: string;
+  manga_en: string;
+  manga_status: number;
+  manga_letter: string;
+  manga_color: string;
+  manga_from: string;
+  manga_author: string;
+  manga_tag: string;
+  manga_class: string;
+  manga_pic: string;
+  manga_pic_thumb: string;
+  manga_pic_slide: string;
+  manga_pic_screenshot: string;
+  manga_blurb: string;
+  manga_remarks: string;
+  manga_jumpurl: string;
+  manga_tpl: string;
+  manga_level: number;
+  manga_lock: number;
+  manga_points: number;
+  manga_points_detail: number;
+  manga_rel_manga: string;
+  manga_rel_vod: string;
+  manga_pwd: string;
+  manga_pwd_url: string;
+  manga_content: string;
+  manga_serial: string;
+  manga_total: number;
+  manga_chapter_from: string;
+  manga_chapter_url: string;
+  manga_last_update_time: number;
+  manga_age_rating: number;
+  manga_orientation: number;
+  manga_is_vip: number;
+  manga_copyright_info: string;
+  manga_time: number;
+  manga_time_add: number;
+  manga_hits: number;
 }
 
 export interface VodItem {
@@ -314,6 +362,7 @@ export interface RoleItem {
 export interface WebsiteItem {
   website_id: number;
   type_id: number;
+  type_name?: string;
   website_name: string;
   website_sub?: string;
   website_en: string;

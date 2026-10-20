@@ -323,6 +323,13 @@
       App.field('采集合并策略 urlrole', App.select('cfUrlrole', [{ value: '1', label: '1 = 智能合并追加' }, { value: '0', label: '0 = 完全覆盖' }], c.urlrole || '1')) +
       App.field('开放 XML 接口', App.select('cfXml', [{ value: '1', label: '开启' }, { value: '0', label: '关闭' }], c.app_allow_xml || '1')) +
       App.field('开放会员注册', App.select('cfUserStatus', [{ value: '1', label: '开启' }, { value: '0', label: '关闭' }], c.user_status || '1')) +
+      App.field('开放全站评论', App.select('cfCommentStatus', [{ value: '1', label: '开启' }, { value: '0', label: '关闭' }], c.comment_status || '1')) +
+      App.field('新评论审核', App.select('cfCommentAudit', [{ value: '0', label: '直接显示' }, { value: '1', label: '管理员审核后显示' }], c.comment_audit || '0')) +
+      '</div>' +
+      '<div class="row3">' +
+      App.field('弹幕审核', App.select('cfDanmakuAudit', [{ value: '1', label: '审核后显示' }, { value: '0', label: '直接显示' }], c.danmaku_audit || '1')) +
+      App.field('聊天室审核', App.select('cfChatAudit', [{ value: '1', label: '审核后显示' }, { value: '0', label: '直接显示' }], c.chat_audit || '1')) +
+      App.field('每日签到奖励积分', App.input('cfSignPoints', c.sign_reward_points || '5', '', 'number')) +
       '</div>' +
       '<div class="row2">' +
       App.field('注册赠送积分', App.input('cfRegPoints', c.user_reg_points || '50', '', 'number')) +
@@ -338,6 +345,9 @@
         site_keywords: App.val('cfKeywords'), site_description: App.val('cfDesc'),
         urlrole: App.val('cfUrlrole'), app_allow_xml: App.val('cfXml'),
         user_status: App.val('cfUserStatus'), user_reg_points: App.val('cfRegPoints'),
+        comment_status: App.val('cfCommentStatus'),
+        comment_audit: App.val('cfCommentAudit'),
+        danmaku_audit: App.val('cfDanmakuAudit'), chat_audit: App.val('cfChatAudit'), sign_reward_points: App.val('cfSignPoints'),
         timming_key: App.val('cfTimmingKey'), admin_user: App.val('cfAdminUser')
       };
       var pwd = App.val('cfNewPwd');

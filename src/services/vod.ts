@@ -719,6 +719,8 @@ export class VodService {
       actor: ['actor_name', 'actor_pic', 'actor_blurb', 'actor_content', 'actor_works'],
       role: ['role_name', 'role_pic', 'role_content'],
       player: ['parse_url', 'player_parse2'],
+      manga: ['manga_name', 'manga_pic', 'manga_pic_thumb', 'manga_pic_slide', 'manga_pic_screenshot', 'manga_chapter_url', 'manga_content'],
+      website: ['website_name', 'website_url', 'website_pic', 'website_logo', 'website_jumpurl'],
     };
 
     if (!allowedTables[table] || !allowedTables[table].includes(column)) {
@@ -821,14 +823,21 @@ export class VodService {
   // ==========================================
   static async queryArts(
     db: D1Database,
-    opts: { page?: number; limit?: number; typeId?: number; wd?: string } = {}
+    opts: { page?: number; limit?: number; typeId?: number; wd?: string; status?: number } = {}
   ): Promise<{ list: ArtItem[]; total: number; page: number; limit: number; pagecount: number }> {
     const page = Math.max(1, opts.page || 1);
     const limit = Math.min(50, Math.max(1, opts.limit || 15));
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = ['a.art_status = 1'];
+    const conditions: string[] = [];
     const params: any[] = [];
+
+    // Public callers omit status and see published content; admin may pass -1 for all states.
+    const status = opts.status === undefined ? 1 : opts.status;
+    if (status >= 0) {
+      conditions.push('a.art_status = ?');
+      params.push(status);
+    }
 
     if (opts.typeId && opts.typeId > 0) {
       conditions.push('(a.type_id = ? OR a.type_id_1 = ?)');
@@ -839,7 +848,7 @@ export class VodService {
       params.push(`%${opts.wd.trim()}%`, `%${opts.wd.trim()}%`);
     }
 
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const countRes = await db.prepare(`SELECT COUNT(*) as c FROM art a ${whereClause}`).bind(...params).first<{ c: number }>();
     const total = countRes?.c || 0;
     const pagecount = Math.ceil(total / limit);
@@ -963,8 +972,12 @@ export class VodService {
   // ==========================================
   // 影视专题 (Topic) 服务
   // ==========================================
-  static async queryTopics(db: D1Database): Promise<TopicItem[]> {
-    const rows = await db.prepare('SELECT * FROM topic WHERE topic_status = 1 ORDER BY topic_sort ASC, topic_id DESC').all<TopicItem>();
+  static async queryTopics(db: D1Database, includeHidden = false): Promise<TopicItem[]> {
+    const rows = await db.prepare(
+      includeHidden
+        ? 'SELECT * FROM topic ORDER BY topic_sort ASC, topic_id DESC'
+        : 'SELECT * FROM topic WHERE topic_status = 1 ORDER BY topic_sort ASC, topic_id DESC'
+    ).all<TopicItem>();
     return rows.results || [];
   }
 
@@ -1081,15 +1094,15 @@ export class VodService {
     return rows.results || [];
   }
 
-  static async addComment(db: D1Database, data: { mid: number; rid: number; pid?: number; userId?: number; name?: string; ip?: string; content: string }): Promise<number> {
+  static async addComment(db: D1Database, data: { mid: number; rid: number; pid?: number; userId?: number; name?: string; ip?: string; content: string; status?: number }): Promise<number> {
     const now = Math.floor(Date.now() / 1000);
     const name = (data.name || '').trim() || '热心影迷';
     const content = (data.content || '').trim();
     if (!content) throw new Error('评论内容不能为空');
 
     const res = await db
-      .prepare('INSERT INTO comment (comment_mid, comment_rid, comment_pid, user_id, comment_name, comment_ip, comment_content, comment_time, comment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
-      .bind(data.mid, data.rid, data.pid || 0, data.userId || 0, name, data.ip || '', content, now)
+      .prepare('INSERT INTO comment (comment_mid, comment_rid, comment_pid, user_id, comment_name, comment_ip, comment_content, comment_time, comment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(data.mid, data.rid, data.pid || 0, data.userId || 0, name, data.ip || '', content, now, data.status === 0 ? 0 : 1)
       .run();
     return Number(res.meta.last_row_id);
   }

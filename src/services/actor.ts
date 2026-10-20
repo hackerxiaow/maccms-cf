@@ -11,13 +11,13 @@ export class ActorService {
    */
   static async queryActors(
     db: D1Database,
-    opts: { page?: number; limit?: number; typeId?: number; letter?: string; wd?: string; area?: string } = {}
+    opts: { page?: number; limit?: number; typeId?: number; letter?: string; wd?: string; area?: string; includeHidden?: boolean } = {}
   ): Promise<{ list: ActorItem[]; total: number; page: number; limit: number; pagecount: number }> {
     const page = Math.max(1, opts.page || 1);
     const limit = Math.min(50, Math.max(1, opts.limit || 18));
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = ['a.actor_status = 1'];
+    const conditions: string[] = opts.includeHidden ? [] : ['a.actor_status = 1'];
     const params: any[] = [];
 
     if (opts.typeId && opts.typeId > 0) {
@@ -38,7 +38,7 @@ export class ActorService {
       params.push(kw, kw, kw);
     }
 
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const countRes = await db.prepare(`SELECT COUNT(*) as c FROM actor a ${whereClause}`).bind(...params).first<{ c: number }>();
     const total = countRes?.c || 0;
     const pagecount = Math.ceil(total / limit);
@@ -191,13 +191,13 @@ export class ActorService {
 
   static async queryRoles(
     db: D1Database,
-    opts: { page?: number; limit?: number; vodId?: number; actorId?: number; wd?: string } = {}
+    opts: { page?: number; limit?: number; vodId?: number; actorId?: number; wd?: string; includeHidden?: boolean } = {}
   ): Promise<{ list: RoleItem[]; total: number; page: number; limit: number; pagecount: number }> {
     const page = Math.max(1, opts.page || 1);
     const limit = Math.min(50, Math.max(1, opts.limit || 20));
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = ['r.role_status = 1'];
+    const conditions: string[] = opts.includeHidden ? [] : ['r.role_status = 1'];
     const params: any[] = [];
 
     if (opts.vodId && opts.vodId > 0) {
@@ -214,7 +214,7 @@ export class ActorService {
       params.push(kw, kw, kw);
     }
 
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const countRes = await db.prepare(`SELECT COUNT(*) as c FROM role r ${whereClause}`).bind(...params).first<{ c: number }>();
     const total = countRes?.c || 0;
     const pagecount = Math.ceil(total / limit);

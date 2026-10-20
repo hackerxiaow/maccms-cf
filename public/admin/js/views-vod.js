@@ -14,6 +14,9 @@
       '<div class="metric-card"><span>分类总数</span><div class="metric-num" style="color:#38bdf8">' + (d.total_type || 0) + '</div></div>' +
       '<div class="metric-card"><span>文章资讯</span><div class="metric-num" style="color:#4ade80">' + (d.total_art || 0) + '</div></div>' +
       '<div class="metric-card"><span>影视专题</span><div class="metric-num" style="color:#facc15">' + (d.total_topic || 0) + '</div></div>' +
+      '<div class="metric-card"><span>漫画内容</span><div class="metric-num" style="color:#a78bfa">' + (d.total_manga || 0) + '</div></div>' +
+      '<div class="metric-card"><span>网址导航</span><div class="metric-num" style="color:#38bdf8">' + (d.total_website || 0) + '</div></div>' +
+      '<div class="metric-card"><span>直播频道</span><div class="metric-num" style="color:#4ade80">' + (d.total_live || 0) + '</div></div>' +
       '<div class="metric-card"><span>明星演员</span><div class="metric-num" style="color:#a78bfa">' + (d.total_actor || 0) + '</div></div>' +
       '<div class="metric-card"><span>注册会员</span><div class="metric-num" style="color:#f472b6">' + (d.total_user || 0) + '</div></div>' +
       '<div class="metric-card"><span>待处理反馈</span><div class="metric-num" style="color:#fb923c">' + (d.total_gbook || 0) + '</div></div>' +
@@ -24,6 +27,7 @@
       '<p>• 视频提供接口：<span class="code">/api.php/provide/vod/?ac=list</span> 或 <span class="code">?ac=videolist&h=24</span>（追加 <span class="code">&at=xml</span> 输出 RSS 5.1）</p>' +
       '<p>• 文章提供接口：<span class="code">/api.php/provide/art/?ac=list</span></p>' +
       '<p>• 明星/角色接口：<span class="code">/api.php/provide/actor/</span>、<span class="code">/api.php/provide/role/</span></p>' +
+      '<p>• 网址导航接口：<span class="code">/api.php/provide/website/?ac=list</span>（支持 <span class="code">&at=xml</span>）</p>' +
       '<p>• v8 经典兼容：<span class="code">/inc/api.php</span>、<span class="code">/inc/apijson.php</span>、<span class="code">/inc/apixml.php</span>（支持 action / rday / play / xt 参数）</p>' +
       '<p>• 定时采集：<span class="code">/api.php/timming/index?h=24</span>（可在系统设置配置 timming_key）</p>' +
       '</div></div>';
@@ -31,11 +35,20 @@
 
   var vodState = { page: 1, ids: [] };
 
+  function vodTypeOptions() {
+    return App.types.filter(function (type) { return Number(type.type_mid) === 1; }).map(function (type) {
+      return { value: type.type_id, label: (type.type_pid > 0 ? '└ ' : '') + type.type_name };
+    });
+  }
+
   Views.vod = function (host) {
     vodState = { page: 1, ids: [] };
     host.innerHTML =
       '<div class="toolbar">' +
       '<input class="input-box" id="vodKw" placeholder="搜索片名 / 演员 / 导演" style="max-width:260px">' +
+      App.select('vodTypeFilter', [{ value: 0, label: '全部分类' }].concat(vodTypeOptions()), 0) +
+      App.select('vodStatusFilter', [{ value: -1, label: '全部审核状态' }, { value: 1, label: '已审核' }, { value: 0, label: '未审核' }], -1) +
+      App.select('vodLockFilter', [{ value: '', label: '全部锁定状态' }, { value: 1, label: '已锁定' }, { value: 0, label: '未锁定' }], '') +
       '<button class="action-btn" id="vodSearchBtn">搜索</button>' +
       '<button class="btn-create" id="vodAddBtn">+ 新增影片</button>' +
       '</div>' +
@@ -56,6 +69,11 @@
       '</tr></thead><tbody id="vodBody"><tr><td colspan="10" class="empty">载入中…</td></tr></tbody></table></div>' +
       '<div id="vodPager"></div></div>';
 
+    ['vodTypeFilter', 'vodStatusFilter', 'vodLockFilter'].forEach(function (id) {
+      var select = document.getElementById(id);
+      if (select) { select.style.width = 'auto'; select.style.minWidth = '150px'; }
+    });
+
     App.on('vodSearchBtn', 'click', function () { vodState.page = 1; loadVodTable(); });
     App.on('vodAddBtn', 'click', function () { openVodModal(null); });
     App.on('vodAll', 'change', function () {
@@ -74,6 +92,9 @@
     var q = '?page=' + vodState.page + '&limit=15';
     var kw = App.val('vodKw');
     if (kw) q += '&wd=' + encodeURIComponent(kw);
+    if (App.val('vodTypeFilter') !== '0') q += '&type_id=' + encodeURIComponent(App.val('vodTypeFilter'));
+    if (App.val('vodStatusFilter') !== '-1') q += '&status=' + encodeURIComponent(App.val('vodStatusFilter'));
+    if (App.val('vodLockFilter') !== '') q += '&lock=' + encodeURIComponent(App.val('vodLockFilter'));
     var j = await App.req('/vod/list' + q);
     if (j.code !== 0) { body.innerHTML = '<tr><td colspan="10" class="empty">加载失败</td></tr>'; return; }
     var list = j.data.list || [];
@@ -145,13 +166,22 @@
     var body =
       '<div class="row3">' +
       App.field('影片名称 *', App.input('vName', v.vod_name)) +
-      App.field('所属分类', App.select('vType', App.typeOptions(), v.type_id)) +
+      App.field('所属分类', App.select('vType', vodTypeOptions(), v.type_id)) +
       App.field('状态', App.select('vStatus', [{ value: 1, label: '已审核' }, { value: 0, label: '未审核' }], v.vod_status === 0 ? 0 : 1)) +
+      '</div>' +
+      '<div class="row2">' +
+      App.field('父级分类', App.select('vType1', vodTypeOptions(), v.type_id_1 || 0, '无')) +
+      App.field('标题颜色', App.input('vColor', v.vod_color, '#ff6600')) +
       '</div>' +
       '<div class="row3">' +
       App.field('副标题', App.input('vSub', v.vod_sub)) +
       App.field('拼音别名', App.input('vEn', v.vod_en)) +
       App.field('首字母', App.input('vLetter', v.vod_letter)) +
+      '</div>' +
+      '<div class="row3">' +
+      App.field('标签', App.input('vTag', v.vod_tag)) +
+      App.field('类型/题材', App.input('vClass', v.vod_class)) +
+      App.field('上映日期', App.input('vPubdate', v.vod_pubdate)) +
       '</div>' +
       '<div class="row3">' +
       App.field('主演', App.input('vActor', v.vod_actor)) +
@@ -169,6 +199,11 @@
       App.field('连载星期 (1-7)', App.input('vWeekday', v.vod_weekday, '', 'number')) +
       '</div>' +
       '<div class="row3">' +
+      App.field('连载标记', App.input('vSerial', v.vod_serial)) +
+      App.field('电视台', App.input('vTv', v.vod_tv)) +
+      App.field('片长', App.input('vDuration', v.vod_duration)) +
+      '</div>' +
+      '<div class="row3">' +
       App.field('备注 / 更新至', App.input('vRemarks', v.vod_remarks)) +
       App.field('总集数', App.input('vTotal', v.vod_total, '', 'number')) +
       App.field('完结状态', App.select('vIsend', [{ value: 0, label: '连载中' }, { value: 1, label: '已完结' }], v.vod_isend || 0)) +
@@ -176,12 +211,30 @@
       '<div class="row3">' +
       App.field('推荐星级 (0-9)', App.input('vLevel', v.vod_level || 0, '', 'number')) +
       App.field('数据锁定', App.select('vLock', [{ value: 0, label: '不锁定' }, { value: 1, label: '锁定(采集不覆盖)' }], v.vod_lock || 0)) +
+      App.field('版权拦截', App.select('vCopyright', [{ value: 0, label: '否' }, { value: 1, label: '是' }], v.vod_copyright || 0)) +
+      '</div>' +
+      '<div class="row3">' +
       App.field('评分', App.input('vScore', v.vod_score || 9.0, '', 'number')) +
+      App.field('豆瓣评分', App.input('vDoubanScore', v.vod_douban_score || 0, '', 'number')) +
+      App.field('内容作者', App.input('vAuthor', v.vod_author)) +
       '</div>' +
       App.field('主海报 URL', App.input('vPic', v.vod_pic)) +
+      '<div class="row3">' +
+      App.field('缩略图 URL', App.input('vPicThumb', v.vod_pic_thumb)) +
       App.field('横版剧照 URL (巨幕背景)', App.input('vPicSlide', v.vod_pic_slide)) +
+      App.field('截图 URL', App.input('vPicScreenshot', v.vod_pic_screenshot)) +
+      '</div>' +
       App.field('一句话简介', App.textarea('vBlurb', v.vod_blurb, 2)) +
+      App.field('幕后信息', App.textarea('vBehind', v.vod_behind, 2)) +
       App.field('剧情详细简介 (支持 HTML)', App.textarea('vContent', v.vod_content, 4)) +
+      '<div class="row2">' +
+      App.field('跳转 URL', App.input('vJumpUrl', v.vod_jumpurl)) +
+      App.field('内容模板', App.input('vTpl', v.vod_tpl)) +
+      '</div>' +
+      '<div class="row2">' +
+      App.field('播放页模板', App.input('vTplPlay', v.vod_tpl_play)) +
+      App.field('下载页模板', App.input('vTplDown', v.vod_tpl_down)) +
+      '</div>' +
       '<div class="card-head" style="margin-top:1rem"><h3>播放线路 ($$$ / # / $)</h3></div>' +
       '<div class="row2">' +
       App.field('播放源标识', App.input('vPlayFrom', v.vod_play_from, 'dplayer$$$kkm3u8')) +
@@ -204,31 +257,49 @@
       '<div class="row3">' +
       App.field('单集下载积分', App.input('vPointsDown', v.vod_points_down || 0, '', 'number')) +
       App.field('试看分钟', App.input('vTrysee', v.vod_trysee || 0, '', 'number')) +
+      App.field('详情访问密码', App.input('vPwd', v.vod_pwd)) +
+      '</div>' +
+      '<div class="row3">' +
+      App.field('播放密码', App.input('vPwdPlay', v.vod_pwd_play)) +
+      App.field('下载密码', App.input('vPwdDown', v.vod_pwd_down)) +
       App.field('豆瓣 ID', App.input('vDoubanId', v.vod_douban_id || 0, '', 'number')) +
       '</div>' +
       App.field('关联视频 ID (逗号分隔)', App.input('vRelVod', v.vod_rel_vod)) +
-      App.field('关联文章 ID (逗号分隔)', App.input('vRelArt', v.vod_rel_art));
+      App.field('关联文章 ID (逗号分隔)', App.input('vRelArt', v.vod_rel_art)) +
+      '<div class="row3">' +
+      App.field('分集剧情开关', App.select('vPlot', [{ value: 0, label: '关闭' }, { value: 1, label: '开启' }], v.vod_plot || 0)) +
+      App.field('剧情分集名称', App.input('vPlotName', v.vod_plot_name)) +
+      App.field('剧情分集内容', App.input('vPlotDetail', v.vod_plot_detail)) +
+      '</div>';
 
     App.modal(id ? '编辑影片 #' + id : '新增影片', body, async function () {
       var payload = {
         vod_id: id || undefined,
         vod_name: App.val('vName'),
-        type_id: App.intVal('vType'),
+        type_id: App.intVal('vType'), type_id_1: App.intVal('vType1'),
         vod_status: App.intVal('vStatus'),
+        vod_color: App.val('vColor'), vod_tag: App.val('vTag'), vod_class: App.val('vClass'),
         vod_sub: App.val('vSub'), vod_en: App.val('vEn'), vod_letter: App.val('vLetter'),
         vod_actor: App.val('vActor'), vod_director: App.val('vDirector'), vod_writer: App.val('vWriter'),
         vod_year: App.val('vYear'), vod_area: App.val('vArea'), vod_lang: App.val('vLang'),
         vod_version: App.val('vVersion'), vod_state: App.val('vState'), vod_weekday: App.intVal('vWeekday'),
+        vod_pubdate: App.val('vPubdate'), vod_serial: App.val('vSerial'), vod_tv: App.val('vTv'),
+        vod_duration: App.val('vDuration'), vod_author: App.val('vAuthor'), vod_jumpurl: App.val('vJumpUrl'),
+        vod_tpl: App.val('vTpl'), vod_tpl_play: App.val('vTplPlay'), vod_tpl_down: App.val('vTplDown'),
         vod_remarks: App.val('vRemarks'), vod_total: App.intVal('vTotal'), vod_isend: App.intVal('vIsend'),
-        vod_level: App.intVal('vLevel'), vod_lock: App.intVal('vLock'), vod_score: parseFloat(App.val('vScore')) || 9.0,
-        vod_pic: App.val('vPic'), vod_pic_slide: App.val('vPicSlide'),
+        vod_level: App.intVal('vLevel'), vod_lock: App.intVal('vLock'), vod_copyright: App.intVal('vCopyright'),
+        vod_score: parseFloat(App.val('vScore')) || 9.0, vod_douban_score: parseFloat(App.val('vDoubanScore')) || 0,
+        vod_pic: App.val('vPic'), vod_pic_thumb: App.val('vPicThumb'), vod_pic_slide: App.val('vPicSlide'),
+        vod_pic_screenshot: App.val('vPicScreenshot'), vod_behind: App.val('vBehind'),
         vod_blurb: App.val('vBlurb'), vod_content: App.val('vContent'),
         vod_play_from: App.val('vPlayFrom'), vod_play_server: App.val('vPlayServer'),
         vod_play_note: App.val('vPlayNote'), vod_play_url: App.val('vPlayUrl'),
         vod_down_from: App.val('vDownFrom'), vod_down_server: App.val('vDownServer'), vod_down_url: App.val('vDownUrl'),
         group_id: App.intVal('vGroupId'), vod_points: App.intVal('vPoints'),
         vod_points_play: App.intVal('vPointsPlay'), vod_points_down: App.intVal('vPointsDown'),
-        vod_trysee: App.intVal('vTrysee'), vod_douban_id: App.intVal('vDoubanId'),
+        vod_trysee: App.intVal('vTrysee'), vod_pwd: App.val('vPwd'), vod_pwd_play: App.val('vPwdPlay'),
+        vod_pwd_down: App.val('vPwdDown'), vod_douban_id: App.intVal('vDoubanId'),
+        vod_plot: App.intVal('vPlot'), vod_plot_name: App.val('vPlotName'), vod_plot_detail: App.val('vPlotDetail'),
         vod_rel_vod: App.val('vRelVod'), vod_rel_art: App.val('vRelArt')
       };
       if (!payload.vod_name) { App.toast('请填写影片名称', true); return; }
@@ -247,7 +318,7 @@
       '<div class="admin-card"><div class="card-head"><h3>数据库全局字符替换</h3></div>' +
       '<div class="help-block" style="margin-bottom:.8rem">用于更换 CDN 域名、图床地址或批量修正播放源。仅允许白名单表与字段。</div>' +
       '<div class="row3">' +
-      App.field('目标表', App.select('rpTable', [{ value: 'vod', label: 'vod 视频' }, { value: 'art', label: 'art 文章' }, { value: 'topic', label: 'topic 专题' }, { value: 'actor', label: 'actor 明星' }, { value: 'role', label: 'role 角色' }, { value: 'player', label: 'player 播放器' }], 'vod')) +
+      App.field('目标表', App.select('rpTable', [{ value: 'vod', label: 'vod 视频' }, { value: 'art', label: 'art 文章' }, { value: 'topic', label: 'topic 专题' }, { value: 'manga', label: 'manga 漫画' }, { value: 'website', label: 'website 网址' }, { value: 'actor', label: 'actor 明星' }, { value: 'role', label: 'role 角色' }, { value: 'player', label: 'player 播放器' }], 'vod')) +
       App.field('目标字段', App.select('rpCol', [{ value: 'vod_pic', label: 'vod_pic' }, { value: 'vod_play_url', label: 'vod_play_url' }, { value: 'vod_content', label: 'vod_content' }, { value: 'vod_actor', label: 'vod_actor' }], 'vod_pic')) +
       '</div>' +
       '<div class="row2">' +
@@ -262,7 +333,9 @@
         topic: ['topic_pic', 'topic_content', 'topic_name'],
         actor: ['actor_pic', 'actor_content', 'actor_name'],
         role: ['role_pic', 'role_content', 'role_name'],
-        player: ['parse_url', 'player_parse2']
+        player: ['parse_url', 'player_parse2'],
+        manga: ['manga_pic', 'manga_pic_thumb', 'manga_pic_slide', 'manga_pic_screenshot', 'manga_chapter_url', 'manga_content', 'manga_name'],
+        website: ['website_pic', 'website_logo', 'website_jumpurl', 'website_url', 'website_name']
       };
       var cols = map[App.val('rpTable')] || [];
       document.getElementById('rpCol').innerHTML = cols.map(function (c) {

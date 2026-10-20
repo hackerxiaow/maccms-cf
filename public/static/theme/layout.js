@@ -77,11 +77,14 @@
       var items = [
         { key: 'home', title: '首页', url: '/', icon: 'hl-icon-shouye' },
         { key: 'actor', title: '明星', url: '/actor.html', icon: 'hl-icon-mingxing' },
+        { key: 'live', title: '直播', url: '/live.html', icon: 'hl-icon-dianshiju3' },
+        { key: 'manga', title: '漫画', url: '/manga.html', icon: 'hl-icon-dianshiju3' },
         { key: 'topic', title: '专题', url: '/topic.html', icon: 'hl-icon-zhuanti' },
         { key: 'art', title: '资讯', url: '/art.html', icon: 'hl-icon-xinwen' },
         { key: 'latest', title: '最新', url: '/type.html?by=time', icon: 'hl-icon-zuixin' },
         { key: 'rank', title: '排行', url: '/rank.html', icon: 'hl-icon-paihang' },
-        { key: 'gbook', title: '留言', url: '/gbook.html', icon: 'hl-icon-liuyan' }
+        { key: 'gbook', title: '留言', url: '/gbook.html', icon: 'hl-icon-liuyan' },
+        { key: 'website', title: '网址', url: '/website.html', icon: 'hl-icon-lianjie' }
       ];
 
       var typeIds = [];
@@ -120,10 +123,13 @@
               '"><i class="iconfont hl-icon-dianshiju3"></i><span>' + U.esc(t.type_name) + '</span></a></li>';
           });
           d += '<li class="hl-menus-item"><a href="/actor.html"><i class="iconfont hl-icon-mingxing"></i><span>明星图谱</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/live.html"><i class="iconfont hl-icon-dianshiju3"></i><span>电视直播</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/manga.html"><i class="iconfont hl-icon-dianshiju3"></i><span>漫画连载</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/topic.html"><i class="iconfont hl-icon-zhuanti"></i><span>精彩专题</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/art.html"><i class="iconfont hl-icon-xinwen"></i><span>新闻资讯</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/rank.html"><i class="iconfont hl-icon-paihang"></i><span>风云榜单</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/gbook.html"><i class="iconfont hl-icon-liuyan"></i><span>求片留言</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/website.html"><i class="iconfont hl-icon-lianjie"></i><span>网址导航</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/user.html"><i class="iconfont hl-icon-yonghu"></i><span>会员中心</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/admin/index.html"><i class="iconfont hl-icon-shezhi"></i><span>管理后台</span></a></li>';
           drawer.innerHTML = d;
@@ -214,6 +220,7 @@
         '              <a href="/topic.html">专题</a><span>—</span>' +
         '              <a href="/art.html">资讯</a><span>—</span>' +
         '              <a href="/gbook.html">留言求片</a><span>—</span>' +
+        '              <a href="/website.html">网址导航</a><span>—</span>' +
         '              <a href="/user.html">会员中心</a><span>—</span>' +
         '              <a href="/api.php/provide/vod/?ac=list" target="_blank">资源接口</a><span>—</span>' +
         '              <a href="/admin/index.html">管理后台</a>' +

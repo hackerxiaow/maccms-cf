@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>电视直播 - MacCMS</title>
+  <meta name="description" content="在线观看站点收录的直播频道">
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
+  <style>
+    .live-page{padding:24px 0 50px}.live-title{margin:0 0 7px;font-size:26px;font-weight:800}.live-subtitle{margin:0 0 18px;color:var(--tx-mute,#888)}
+    .live-categories{display:flex;gap:8px;overflow:auto;padding:4px 0 14px}.live-category{flex:0 0 auto;padding:8px 14px;border:1px solid var(--bd-color,#e5e7eb);border-radius:20px;background:var(--bg-card,#fff);color:inherit;cursor:pointer}.live-category.active{border-color:var(--hl-site,#40cc92);background:var(--hl-site,#40cc92);color:#fff}
+    .live-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:13px}.live-card{display:flex;align-items:center;gap:12px;min-width:0;padding:13px;border:1px solid var(--bd-color,#e5e7eb);border-radius:10px;background:var(--bg-card,#fff)}.live-logo{width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;overflow:hidden;border-radius:9px;background:var(--bg-subs,#f1f5f9);color:var(--hl-site,#40cc92);font-size:20px;font-weight:800}.live-logo img{width:100%;height:100%;object-fit:cover}.live-info{min-width:0;flex:1}.live-info strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.live-info small{display:block;margin-top:4px;color:var(--tx-mute,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.live-play{padding:7px 12px;border:0;border-radius:7px;background:var(--hl-site,#40cc92);color:#fff;cursor:pointer}.live-empty{grid-column:1/-1;padding:35px;text-align:center;color:var(--tx-mute,#888)}
+    .live-modal{position:fixed;inset:0;z-index:3000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.78)}.live-modal.open{display:flex}.live-modal-box{width:min(100%,1000px);padding:12px;border-radius:10px;background:#111;color:#fff}.live-modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.live-close{width:34px;height:34px;border:0;border-radius:6px;background:#29313a;color:#fff;font-size:22px;cursor:pointer}.live-player{width:100%;aspect-ratio:16/9;background:#000}
+    @media(max-width:600px){.live-page{padding-top:17px}.live-title{font-size:22px}.live-grid{grid-template-columns:1fr}.live-modal{padding:8px}.live-modal-box{padding:8px}}
+  </style>
+</head>
+<body>
+<div id="siteHeader"></div>
+<main id="conch-content" class="conch-content">
+  <div class="container live-page">
+    <h1 class="live-title">电视直播</h1>
+    <p class="live-subtitle">浏览并播放站点收录的直播频道</p>
+    <nav id="liveCategories" class="live-categories" aria-label="直播分类"></nav>
+    <div id="liveList" class="live-grid"><div class="live-empty">正在载入频道…</div></div>
+    <div id="livePager" class="directory-pager"></div>
+  </div>
+</main>
+<div id="siteFooter"></div>
+<div class="live-modal" id="liveModal" role="dialog" aria-modal="true" aria-label="直播播放器">
+  <div class="live-modal-box"><div class="live-modal-head"><strong id="liveNowTitle">直播播放</strong><button class="live-close" id="liveClose" type="button" aria-label="关闭播放器">×</button></div><div id="livePlayer" class="live-player"></div></div>
+</div>
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.js"></script>
+<script>
+(function () {
+  var page = 1;
+  var categoryId = 0;
+  var player = null;
+
+  $(function () {
+    Theme.init().then(function () {
+      Layout.render('live');
+      bindPlayer();
+      loadCategories();
+      loadChannels();
+    });
+  });
+
+  function loadCategories() {
+    API.get('/api/live/categories').then(function (result) {
+      var categories = result && result.code === 0 ? result.data || [] : [];
+      var html = '<button class="live-category' + (categoryId === 0 ? ' active' : '') + '" data-category="0">全部频道</button>';
+      categories.forEach(function (item) {
+        html += '<button class="live-category' + (categoryId === item.live_category_id ? ' active' : '') + '" data-category="' + item.live_category_id + '">' + U.esc(item.live_category_name) + '</button>';
+      });
+      $('#liveCategories').html(html).off('click').on('click', '.live-category', function () {
+        categoryId = parseInt($(this).attr('data-category'), 10) || 0;
+        page = 1;
+        $('#liveCategories .live-category').removeClass('active');
+        $(this).addClass('active');
+        loadChannels();
+      });
+    });
+  }
+
+  function loadChannels() {
+    var query = { page: page, limit: 48 };
+    if (categoryId) query.category_id = categoryId;
+    $('#liveList').html('<div class="live-empty">正在载入频道…</div>');
+    API.get('/api/live/list', query).then(function (result) {
+      var data = result && result.code === 0 ? result.data : null;
+      var channels = data && data.list || [];
+      if (!channels.length) {
+        $('#liveList').html('<div class="live-empty">该分类还没有启用的直播频道</div>');
+        $('#livePager').empty();
+        return;
+      }
+      var html = channels.map(function (item) {
+        var logo = item.live_logo ? '<img src="' + U.esc(item.live_logo) + '" alt="" loading="lazy">' : U.esc((item.live_name || '直').slice(0, 1));
+        return '<article class="live-card"><div class="live-logo">' + logo + '</div><div class="live-info"><strong>' + U.esc(item.live_name) + '</strong><small>' + U.esc(item.live_category_name || item.live_desc || '直播频道') + '</small></div>' +
+          '<button class="live-play" type="button" data-play="' + item.live_id + '">播放</button></article>';
+      }).join('');
+      $('#liveList').html(html);
+      $('#liveList').off('click').on('click', '[data-play]', function () {
+        var id = parseInt($(this).attr('data-play'), 10);
+        var item = channels.find(function (channel) { return channel.live_id === id; });
+        if (item) playChannel(item);
+      });
+      renderPager(data);
+    }).catch(function () { $('#liveList').html('<div class="live-empty">频道加载失败，请稍后重试</div>'); });
+  }
+
+  function renderPager(data) {
+    if (!data || data.pagecount <= 1) { $('#livePager').empty(); return; }
+    var html = '<div class="directory-pager">';
+    if (data.page > 1) html += '<button type="button" data-page="' + (data.page - 1) + '">上一页</button>';
+    html += '<span>' + data.page + ' / ' + data.pagecount + '（共 ' + data.total + ' 个频道）</span>';
+    if (data.page < data.pagecount) html += '<button type="button" data-page="' + (data.page + 1) + '">下一页</button>';
+    html += '</div>';
+    $('#livePager').html(html).off('click').on('click', '[data-page]', function () { page = parseInt($(this).attr('data-page'), 10) || 1; loadChannels(); });
+  }
+
+  function playChannel(item) {
+    $('#liveNowTitle').text(item.live_name);
+    $('#liveModal').addClass('open');
+    var container = document.getElementById('livePlayer');
+    if (player) { player.destroy(); player = null; }
+    container.innerHTML = '';
+    if (window.DPlayer) {
+      player = new DPlayer({ container: container, autoplay: true, live: true, theme: '#40cc92', video: { url: item.live_url, type: /\.m3u8(?:$|\?)/i.test(item.live_url) ? 'hls' : 'auto' } });
+    } else {
+      container.innerHTML = '<video src="' + U.esc(item.live_url) + '" controls autoplay playsinline style="width:100%;height:100%;background:#000"></video>';
+    }
+  }
+
+  function closePlayer() {
+    $('#liveModal').removeClass('open');
+    if (player) { player.destroy(); player = null; }
+    $('#livePlayer').empty();
+  }
+
+  function bindPlayer() {
+    $('#liveClose, #liveModal').on('click', function (event) { if (event.target.id === 'liveModal' || event.currentTarget.id === 'liveClose') closePlayer(); });
+    $(document).on('keydown', function (event) { if (event.key === 'Escape') closePlayer(); });
+  }
+})();
+</script>
+</body>
+</html>

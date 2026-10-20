@@ -101,6 +101,34 @@
         <ul class="hl-one-list clearfix" id="logList"></ul>
         <div id="logEmpty" class="hl-empty" style="display:none;padding:30px 0;">暂无记录</div>
       </div>
+
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-top:20px;">
+        <h3 style="margin:0 0 14px;font-size:1.05rem;">签到与优惠券</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button type="button" id="btnDailySign" style="padding:8px 16px;border:0;border-radius:7px;background:var(--hl-site,#0099ff);color:#fff;cursor:pointer;">每日签到</button>
+          <input type="text" id="couponCode" placeholder="输入优惠码" style="padding:8px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <button type="button" id="btnCouponRedeem" style="padding:8px 16px;border:1px solid var(--bd-color,#ddd);border-radius:7px;background:none;cursor:pointer;">兑换优惠券</button>
+        </div>
+        <div id="couponList" style="margin-top:12px;font-size:.9rem;color:var(--tx-mute,#777);"></div>
+      </div>
+
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-top:20px;">
+        <h3 style="margin:0 0 14px;font-size:1.05rem;">积分商城</h3>
+        <h4 style="margin:8px 0;">限时秒杀</h4><div id="mallSeckill" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px;"></div>
+        <div id="mallGoods" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;"></div>
+        <h4 style="margin:18px 0 8px;">我的商城订单</h4><div id="mallOrders" style="font-size:.9rem;color:var(--tx-mute,#777);"></div>
+      </div>
+
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-top:20px;">
+        <h3 style="margin:0 0 14px;font-size:1.05rem;">站内私信与关注</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <input type="number" id="pmReceiver" placeholder="收件会员 ID" style="padding:8px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <input type="text" id="pmContent" placeholder="私信内容" style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <button type="button" id="btnSendPm" style="padding:8px 16px;border:1px solid var(--bd-color,#ddd);border-radius:7px;background:none;cursor:pointer;">发送私信</button>
+        </div>
+        <div id="pmList" style="font-size:.9rem;"></div>
+        <h4 style="margin:18px 0 8px;">我的关注</h4><div id="followList" style="font-size:.9rem;color:var(--tx-mute,#777);"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -139,6 +167,7 @@ function checkAuthState() {
       $('#userBox').show();
       renderProfile(j.data);
       loadLogs();
+      loadMemberExtras();
     } else {
       localStorage.removeItem(USER_TOKEN_KEY);
       $('#guestBox').show();
@@ -254,11 +283,79 @@ function bindEvents() {
     });
   });
 
+  $('#btnDailySign').on('click', function () {
+    memberRequest('/api/user/sign','POST',{}).then(function(result){alert(result.msg||'签到完成');if(result.code===0)checkAuthState();});
+  });
+
+  $('#btnCouponRedeem').on('click', function () {
+    var code=$('#couponCode').val().trim();if(!code){alert('请输入优惠码');return;}
+    memberRequest('/api/user/coupons/redeem','POST',{code:code}).then(function(result){alert(result.msg||'兑换完成');if(result.code===0){$('#couponCode').val('');loadMemberExtras();}});
+  });
+
+  $('#btnSendPm').on('click', function () {
+    var receiver=Number($('#pmReceiver').val()),content=$('#pmContent').val().trim();
+    if(!receiver||!content){alert('请输入收件会员 ID 和私信内容');return;}
+    memberRequest('/api/user/messages','POST',{receiver_id:receiver,content:content}).then(function(result){alert(result.msg||'发送完成');if(result.code===0){$('#pmContent').val('');loadMemberExtras();}});
+  });
+
+  $('#mallGoods').on('click','[data-buy-goods]',function(){
+    var button=$(this),goodsId=Number(button.data('buy-goods'));
+    var couponId=Number($('#mallCoupon_'+goodsId).val())||0;
+    if(!confirm('确认创建订单？订单会扣除页面显示的积分；现金部分需管理员线下核验。待核款订单可取消并退回积分和优惠券。'))return;
+    button.prop('disabled',true);
+    memberRequest('/api/mall/orders','POST',{goods_id:goodsId,quantity:1,user_coupon_id:couponId}).then(function(result){alert(result.msg||'订单已创建');if(result.code===0){checkAuthState();loadMemberExtras();}}).finally(function(){button.prop('disabled',false);});
+  });
+
+  $('#mallSeckill').on('click','[data-buy-seckill]',function(){
+    var button=$(this),campaignId=Number(button.data('buy-seckill')),goodsId=Number(button.data('goods-id'));
+    if(!confirm('确认按秒杀价创建订单？活动库存会立即锁定，待核款订单可取消。'))return;
+    button.prop('disabled',true);
+    memberRequest('/api/mall/orders','POST',{goods_id:goodsId,quantity:1,seckill_id:campaignId}).then(function(result){alert(result.msg||'订单已创建');if(result.code===0){checkAuthState();loadMemberExtras();}}).finally(function(){button.prop('disabled',false);});
+  });
+
+  $('#mallOrders').on('click','[data-cancel-order]',function(){
+    var button=$(this),orderId=Number(button.data('cancel-order'));
+    if(!confirm('取消此待核款订单？库存、积分和优惠券会退回。'))return;
+    memberRequest('/api/mall/orders/'+orderId+'/cancel','POST',{}).then(function(result){alert(result.msg||'订单已处理');if(result.code===0){checkAuthState();loadMemberExtras();}});
+  });
+
+  $('#followList').on('click','[data-unfollow]',function(){
+    var button=$(this);memberRequest('/api/user/follows/toggle','POST',{mid:Number(button.data('mid')),rid:Number(button.data('rid'))}).then(function(result){if(result.code===0)loadMemberExtras();else alert(result.msg||'操作失败');});
+  });
+
   $('#logTabs a').on('click', function () {
     $('#logTabs a').removeClass('active');
     $(this).addClass('active');
     currentLogType = $(this).data('type');
     loadLogs();
+  });
+}
+
+function memberRequest(path,method,payload){
+  return fetch(path,{method:method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:method==='GET'?undefined:JSON.stringify(payload||{})})
+    .then(function(response){return response.json();}).catch(function(){return {code:500,msg:'请求失败，请稍后重试'};});
+}
+
+function loadMemberExtras(){
+  Promise.all([
+    memberRequest('/api/user/coupons','GET'),memberRequest('/api/user/messages','GET'),
+    memberRequest('/api/user/follows','GET'),memberRequest('/api/mall/goods','GET'),memberRequest('/api/mall/orders','GET'),memberRequest('/api/mall/seckill','GET')
+  ]).then(function(results){
+    var coupons=results[0].data||[];
+    var now=Math.floor(Date.now()/1000);
+    var availableCoupons=coupons.filter(function(item){return !item.used_at&&!item.order_id&&(!item.starts_at||item.starts_at<=now)&&(!item.ends_at||item.ends_at>=now);});
+    $('#couponList').html(coupons.length?coupons.map(function(item){var state=item.used_at?'已使用':item.order_id?'订单处理中':((item.starts_at&&item.starts_at>now)||(item.ends_at&&item.ends_at<now))?'已过期/未开始':'可使用';return '<div style="padding:6px 0;border-bottom:1px solid var(--bd-color,#eee)"><strong>'+U.esc(item.coupon_name)+'</strong> · '+U.esc(item.coupon_code)+' · '+state+'</div>';}).join(''):'尚未领取优惠券');
+    var messages=results[1].data||[];
+    $('#pmList').html(messages.length?messages.slice(0,20).map(function(item){return '<div style="padding:7px 0;border-bottom:1px solid var(--bd-color,#eee)"><strong>'+U.esc(item.sender_name||'会员')+'</strong> · '+U.esc(new Date(item.created_at*1000).toLocaleString())+'<div>'+U.esc(item.content)+'</div></div>';}).join(''):'暂无私信');
+    var follows=results[2].data||[];
+    $('#followList').html(follows.length?follows.map(function(item){return '<span style="display:inline-flex;align-items:center;gap:6px;margin:0 8px 8px 0;padding:5px 9px;border-radius:15px;background:var(--bg-subs,#f1f5f9)">模型 '+U.esc(item.follow_mid)+' · #'+item.follow_rid+' <button data-unfollow="1" data-mid="'+item.follow_mid+'" data-rid="'+item.follow_rid+'" style="border:0;background:none;color:#b45309;cursor:pointer">取消</button></span>';}).join(''):'暂无关注内容');
+    var goods=results[3].data||[];
+    var campaigns=results[5].data||[];
+    $('#mallSeckill').html(campaigns.length?campaigns.map(function(item){return '<div style="padding:12px;border:1px solid #f4c77a;border-radius:9px;background:linear-gradient(135deg,#fffaf0,#fff)"><strong>'+U.esc(item.campaign_name)+'</strong><p style="margin:6px 0">'+U.esc(item.goods_name)+'</p><div>秒杀价 ¥ '+Number(item.sale_price||0).toFixed(2)+' · 库存 '+Number(item.inventory||0)+'</div><button type="button" data-buy-seckill="'+Number(item.campaign_id)+'" data-goods-id="'+Number(item.goods_id)+'" style="margin-top:8px;padding:6px 12px;border:0;border-radius:6px;background:#e99825;color:#fff;cursor:pointer">立即秒杀</button></div>';}).join(''):'<div class="sub">当前没有进行中的秒杀活动</div>');
+    $('#mallGoods').html(goods.length?goods.map(function(item){var price=Number(item.price||0),options=availableCoupons.filter(function(coupon){return price>0&&price>=Number(coupon.min_spend||0);}).map(function(coupon){var discount=coupon.discount_type==='percent'?Number(coupon.discount_value)+'% 折扣':'减 ¥'+Number(coupon.discount_value).toFixed(2);return '<option value="'+Number(coupon.user_coupon_id)+'">'+U.esc(coupon.coupon_name)+' · '+discount+'</option>';}).join('');var couponSelect=options?'<label style="display:block;margin-top:8px;font-size:.85rem">优惠券 <select id="mallCoupon_'+Number(item.goods_id)+'" style="max-width:100%;padding:5px"><option value="">不使用</option>'+options+'</select></label>':'';return '<div style="padding:12px;border:1px solid var(--bd-color,#eee);border-radius:9px"><strong>'+U.esc(item.goods_name)+'</strong><p style="margin:6px 0;color:var(--tx-mute,#777)">'+U.esc(item.goods_desc||'')+'</p><div>积分 '+Number(item.points||0)+' · ¥ '+price.toFixed(2)+' · 库存 '+Number(item.inventory||0)+'</div>'+couponSelect+'<button type="button" data-buy-goods="'+item.goods_id+'" style="margin-top:8px;padding:6px 12px;border:0;border-radius:6px;background:var(--hl-site,#09f);color:#fff;cursor:pointer">下单</button></div>';}).join(''):'暂无上架商品');
+    var orders=results[4].data||[];
+    var orderStates={0:'待核款',1:'已确认/待履约',2:'已完成',3:'已取消'};
+    $('#mallOrders').html(orders.length?orders.map(function(item){var cancel=Number(item.status)===0?' <button type="button" data-cancel-order="'+Number(item.mall_order_id)+'" style="margin-left:8px">取消订单</button>':'';return '<div style="padding:7px 0;border-bottom:1px solid var(--bd-color,#eee)">订单 '+U.esc(item.order_code)+' · '+U.esc(item.goods_name||'商品已下架')+' · '+(orderStates[Number(item.status)]||'未知状态')+' · ¥ '+Number(item.total_price||0).toFixed(2)+' · '+Number(item.total_points||0)+' 积分'+cancel+'</div>';}).join(''):'暂无商城订单');
   });
 }
 

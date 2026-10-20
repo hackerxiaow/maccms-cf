@@ -4,12 +4,17 @@
 (function (global) {
   'use strict';
   var Views = global.Views = global.Views || {};
+  var orderKeyword = '';
+  var orderStatus = '';
+  var gbookStatus = '';
+  var commentStatus = '';
+  var commentKeyword = '';
 
   // ---------------- 会员中心 ----------------
   Views.user = function (host) {
     host.innerHTML =
       '<div class="tabs-line" id="userTabs">' +
-      '<a class="active" data-tab="users">会员账号</a><a data-tab="groups">会员组权限</a><a data-tab="cards">充值卡密</a>' +
+      '<a class="active" data-tab="users">会员账号</a><a data-tab="groups">会员组权限</a><a data-tab="cards">充值卡密</a><a data-tab="orders">订单记录</a><a data-tab="access">登录记录</a><a data-tab="ulog">会员足迹</a>' +
       '</div><div id="userPane"></div>';
     document.querySelectorAll('#userTabs a').forEach(function (a) {
       a.onclick = function () {
@@ -17,7 +22,10 @@
         a.classList.add('active');
         if (a.dataset.tab === 'users') renderUsers();
         else if (a.dataset.tab === 'groups') renderGroups();
-        else renderCards();
+        else if (a.dataset.tab === 'cards') renderCards();
+        else if (a.dataset.tab === 'orders') renderOrders();
+        else if (a.dataset.tab === 'access') renderAccessLogs();
+        else renderUserFootprints();
       };
     });
     renderUsers();
@@ -32,6 +40,45 @@
       '</tr></thead><tbody id="userBody"></tbody></table></div><div id="userPager"></div></div>';
     App.on('userSearchBtn', 'click', function () { loadUsers(1); });
     loadUsers(1);
+  }
+
+  async function renderOrders(page) {
+    page = page || 1;
+    var currentKeyword = document.getElementById('orderKw');
+    var currentStatus = document.getElementById('orderStatus');
+    if (currentKeyword) orderKeyword = currentKeyword.value;
+    if (currentStatus) orderStatus = currentStatus.value;
+    var pane = document.getElementById('userPane');
+    pane.innerHTML = '<div class="toolbar"><input class="input-box" id="orderKw" placeholder="订单号 / 会员账号" style="max-width:260px">' +
+      '<select class="admin-select" id="orderStatus" style="width:auto;min-width:120px"><option value="">全部状态</option><option value="0">待处理</option><option value="1">已完成</option></select>' +
+      '<button class="action-btn" id="orderSearchBtn">搜索</button></div>' +
+      '<div class="admin-card"><div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
+      '<th>ID</th><th>订单号</th><th>会员</th><th>金额</th><th>积分</th><th>状态</th><th>支付方式</th><th>创建时间</th>' +
+      '</tr></thead><tbody id="orderBody"></tbody></table></div><div id="orderPager"></div></div>';
+    document.getElementById('orderKw').value = orderKeyword;
+    document.getElementById('orderStatus').value = orderStatus;
+    App.on('orderSearchBtn', 'click', function () { renderOrders(1); });
+    App.on('orderKw', 'keydown', function (event) { if (event.key === 'Enter') renderOrders(1); });
+    var query = '?page=' + page + '&limit=20';
+    if (orderKeyword) query += '&wd=' + encodeURIComponent(orderKeyword);
+    if (orderStatus !== '') query += '&status=' + encodeURIComponent(orderStatus);
+    var result = await App.req('/order/list' + query);
+    var body = document.getElementById('orderBody');
+    if (!body) return;
+    if (result.code !== 0) { body.innerHTML = '<tr><td colspan="8" class="empty">订单列表加载失败</td></tr>'; return; }
+    var rows = (result.data && result.data.list) || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="8" class="empty">暂无订单记录</td></tr>';
+      document.getElementById('orderPager').innerHTML = '';
+      return;
+    }
+    body.innerHTML = rows.map(function (order) {
+      return '<tr><td>' + order.order_id + '</td><td class="code">' + App.esc(order.order_code) + '</td>' +
+        '<td>' + App.esc(order.user_name || ('会员 #' + order.user_id)) + '</td><td>¥' + Number(order.order_price || 0).toFixed(2) + '</td>' +
+        '<td>' + (order.order_points || 0) + '</td><td>' + (order.order_status ? '<span class="tag green">已完成</span>' : '<span class="tag gold">待处理</span>') + '</td>' +
+        '<td>' + App.esc(order.order_pay_type || 'manual') + '</td><td>' + App.fmtTime(order.order_time) + '</td></tr>';
+    }).join('');
+    document.getElementById('orderPager').innerHTML = App.pager(result.data, function (nextPage) { renderOrders(nextPage); });
   }
 
   async function loadUsers(page) {
@@ -194,33 +241,111 @@
     });
   }
 
+  function renderAccessLogs() {
+    var pane = document.getElementById('userPane');
+    pane.innerHTML = '<div class="toolbar"><input class="input-box" id="accessKw" placeholder="会员账号 / IP 地址" style="max-width:260px"><button class="action-btn" id="accessSearch">搜索</button></div>' +
+      '<div class="admin-card"><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>时间</th><th>会员</th><th>事件</th><th>IP 地址</th></tr></thead><tbody id="accessRows"></tbody></table></div><div id="accessPager"></div></div>';
+    App.on('accessSearch', 'click', function () { loadAccessLogs(1); });
+    App.on('accessKw', 'keydown', function (event) { if (event.key === 'Enter') loadAccessLogs(1); });
+    loadAccessLogs(1);
+  }
+
+  async function loadAccessLogs(page) {
+    var result = await App.req('/user/access-log?page=' + page + '&limit=30&wd=' + encodeURIComponent(App.val('accessKw')));
+    var data = result.data || {};
+    var rows = data.list || [];
+    var host = document.getElementById('accessRows');
+    if (!host) return;
+    host.innerHTML = rows.length ? rows.map(function (row) {
+      return '<tr><td>' + App.fmtTime(row.created_at) + '</td><td><b>' + App.esc(row.user_name) + '</b> <span class="muted">' + App.esc(row.user_nick || '') + '</span></td>' +
+        '<td><span class="tag">' + (row.action === 'register' ? '注册' : '登录') + '</span></td><td class="code">' + App.esc(row.client_ip || '-') + '</td></tr>';
+    }).join('') : '<tr><td colspan="4" class="empty">暂无登录与注册记录</td></tr>';
+    document.getElementById('accessPager').innerHTML = App.pager(data, loadAccessLogs);
+  }
+
+  function renderUserFootprints() {
+    var pane = document.getElementById('userPane');
+    pane.innerHTML = '<div class="toolbar"><input class="input-box" id="ulogKw" placeholder="会员账号 / 内容 ID" style="max-width:260px"><button class="action-btn" id="ulogSearch">搜索</button></div>' +
+      '<div class="admin-card"><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>时间</th><th>会员</th><th>类型</th><th>模型</th><th>内容 ID</th><th>线路 / 分集</th><th>积分变化</th></tr></thead><tbody id="ulogRows"></tbody></table></div><div id="ulogPager"></div></div>';
+    App.on('ulogSearch', 'click', function () { loadUserFootprints(1); });
+    App.on('ulogKw', 'keydown', function (event) { if (event.key === 'Enter') loadUserFootprints(1); });
+    loadUserFootprints(1);
+  }
+
+  async function loadUserFootprints(page) {
+    var result = await App.req('/user/ulog/list?page=' + page + '&limit=30&wd=' + encodeURIComponent(App.val('ulogKw')));
+    var data = result.data || {};
+    var rows = data.list || [];
+    var host = document.getElementById('ulogRows');
+    if (!host) return;
+    var types = { 1: '浏览历史', 2: '收藏', 3: '点播消费', 4: '下载消费', 5: '积分充值' };
+    var models = { 1: '影片', 2: '文章', 3: '专题', 8: '明星', 9: '角色', 11: '网址', 12: '漫画' };
+    host.innerHTML = rows.length ? rows.map(function (row) {
+      return '<tr><td>' + App.fmtTime(row.ulog_time) + '</td><td>' + App.esc(row.user_name || ('会员 #' + row.user_id)) + '</td>' +
+        '<td><span class="tag">' + (types[row.ulog_type] || ('类型 ' + row.ulog_type)) + '</span></td><td>' + (models[row.ulog_mid] || ('模型 ' + row.ulog_mid)) + '</td>' +
+        '<td>' + row.ulog_rid + '</td><td>' + (row.ulog_sid || 0) + ' / ' + (row.ulog_nid || 0) + '</td><td>' + (row.ulog_points || 0) + '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="empty">暂无会员消费或浏览记录</td></tr>';
+    document.getElementById('ulogPager').innerHTML = App.pager(data, loadUserFootprints);
+  }
+
   // ---------------- 留言与报错 ----------------
   Views.gbook = function (host) {
-    host.innerHTML = '<div class="admin-card"><div class="card-head"><h3>求片留言与播放故障报错</h3>' +
-      '<button class="action-btn" id="gbookRefresh">刷新</button></div>' +
+    host.innerHTML = '<div class="toolbar"><select class="admin-select" id="gbookStatus" style="width:auto;min-width:125px">' +
+      '<option value="">全部状态</option><option value="1">公开</option><option value="0">已隐藏</option></select>' +
+      '<button class="action-btn" id="gbookSearch">筛选</button><button class="action-btn" id="gbookRefresh">刷新</button>' +
+      '<button class="action-btn ok" data-gbook-status="1">批量公开</button><button class="action-btn" data-gbook-status="0">批量隐藏</button></div>' +
+      '<div class="admin-card"><div class="card-head"><h3>求片留言与播放故障报错</h3></div>' +
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
-      '<th>ID</th><th>类型</th><th>昵称</th><th>关联影片 / 线路</th><th>内容</th><th>回复</th><th>时间</th><th>操作</th>' +
+      '<th><input type="checkbox" class="checkbox" id="gbookSelectAll" aria-label="全选"></th><th>ID</th><th>类型</th><th>昵称</th><th>关联影片 / 线路</th><th>内容</th><th>回复</th><th>状态</th><th>时间</th><th>操作</th>' +
       '</tr></thead><tbody id="gbookBody"></tbody></table></div><div id="gbookPager"></div></div>';
+    document.getElementById('gbookStatus').value = gbookStatus;
+    App.on('gbookSearch', 'click', function () {
+      gbookStatus = document.getElementById('gbookStatus').value;
+      loadGbook(1);
+    });
+    App.on('gbookStatus', 'change', function () {
+      gbookStatus = document.getElementById('gbookStatus').value;
+      loadGbook(1);
+    });
     App.on('gbookRefresh', 'click', function () { loadGbook(1); });
+    App.on('gbookSelectAll', 'change', function (event) {
+      document.querySelectorAll('#gbookBody [data-gbook-select]').forEach(function (box) { box.checked = event.target.checked; });
+    });
+    host.querySelectorAll('[data-gbook-status]').forEach(function (button) {
+      button.onclick = function () { updateGbookStatus(null, parseInt(button.dataset.gbookStatus, 10)); };
+    });
     loadGbook(1);
   };
 
   async function loadGbook(page) {
-    var j = await App.req('/gbook/list?page=' + page + '&limit=20');
+    var query = '?page=' + page + '&limit=20';
+    if (gbookStatus !== '') query += '&status=' + encodeURIComponent(gbookStatus);
+    var j = await App.req('/gbook/list' + query);
     var body = document.getElementById('gbookBody');
     if (!body) return;
     var list = (j.data && j.data.list) || [];
-    if (!list.length) { body.innerHTML = '<tr><td colspan="8" class="empty">暂无留言反馈</td></tr>'; return; }
+    var selectAll = document.getElementById('gbookSelectAll');
+    if (selectAll) selectAll.checked = false;
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="10" class="empty">暂无留言反馈</td></tr>';
+      document.getElementById('gbookPager').innerHTML = '';
+      return;
+    }
     body.innerHTML = list.map(function (g) {
       var typeTag = g.vod_name ? '<span class="tag red">播放报错</span>' : '<span class="tag">求片留言</span>';
-      return '<tr><td>' + g.gbook_id + '</td><td>' + typeTag + '</td><td>' + App.esc(g.gbook_name) + '</td>' +
+      return '<tr><td><input type="checkbox" class="checkbox" data-gbook-select value="' + g.gbook_id + '"></td><td>' + g.gbook_id + '</td><td>' + typeTag + '</td><td>' + App.esc(g.gbook_name) + '</td>' +
         '<td>' + (g.vod_name ? '<b>' + App.esc(g.vod_name) + '</b><div class="muted">' + App.esc(g.play_from) + ' / ' + App.esc(g.play_part) + '</div>' : '-') + '</td>' +
         '<td style="max-width:260px">' + App.esc(g.gbook_content) + '</td>' +
         '<td style="max-width:200px">' + (g.gbook_reply ? App.esc(g.gbook_reply) : '<span class="muted">未回复</span>') + '</td>' +
+        '<td>' + (g.gbook_status ? '<span class="tag green">公开</span>' : '<span class="tag gold">已隐藏</span>') + '</td>' +
         '<td>' + App.fmtTime(g.gbook_time) + '</td>' +
         '<td><button class="action-btn" data-reply="' + g.gbook_id + '">回复</button> ' +
+        (g.gbook_status ? '<button class="action-btn" data-status="0" data-id="' + g.gbook_id + '">隐藏</button> ' : '<button class="action-btn ok" data-status="1" data-id="' + g.gbook_id + '">公开</button> ') +
         '<button class="action-btn del" data-del="' + g.gbook_id + '">删除</button></td></tr>';
     }).join('');
+    body.querySelectorAll('[data-status]').forEach(function (button) {
+      button.onclick = function () { updateGbookStatus([parseInt(button.dataset.id, 10)], parseInt(button.dataset.status, 10), page); };
+    });
     document.querySelectorAll('#gbookBody [data-reply]').forEach(function (b) {
       b.onclick = function () {
         var g = list.find(function (x) { return x.gbook_id === parseInt(b.dataset.reply, 10); });
@@ -245,39 +370,95 @@
     document.getElementById('gbookPager').innerHTML = App.pager(j.data, loadGbook);
   }
 
+  async function updateGbookStatus(ids, status, page) {
+    if (!ids) {
+      ids = Array.from(document.querySelectorAll('#gbookBody [data-gbook-select]:checked')).map(function (box) { return parseInt(box.value, 10); });
+    }
+    if (!ids.length) { App.toast('请先选择留言', true); return; }
+    var result = await App.req('/gbook/batch/status', { method: 'POST', body: { ids: ids, status: status } });
+    if (result.code !== 0) { App.toast(result.msg || '状态更新失败', true); return; }
+    App.toast(result.msg || '反馈状态已更新');
+    loadGbook(page || 1);
+  }
+
   // ---------------- 评论 ----------------
   Views.comment = function (host) {
-    host.innerHTML = '<div class="admin-card"><div class="card-head"><h3>全站评论管理</h3>' +
-      '<button class="action-btn" id="cmtRefresh">刷新</button></div>' +
+    host.innerHTML = '<div class="toolbar"><select class="admin-select" id="cmtStatus" style="width:auto;min-width:125px">' +
+      '<option value="">全部状态</option><option value="1">已通过</option><option value="0">已隐藏</option></select>' +
+      '<input class="input-box" id="cmtKw" placeholder="昵称 / 评论内容" style="max-width:240px">' +
+      '<button class="action-btn" id="cmtSearch">筛选</button><button class="action-btn" id="cmtRefresh">刷新</button>' +
+      '<button class="action-btn ok" data-batch-status="1">批量通过</button><button class="action-btn" data-batch-status="0">批量隐藏</button></div>' +
+      '<div class="admin-card"><div class="card-head"><h3>全站评论管理</h3></div>' +
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
-      '<th>ID</th><th>模块</th><th>关联内容</th><th>昵称</th><th>评论内容</th><th>时间</th><th>操作</th>' +
-      '</tr></thead><tbody id="cmtBody"></tbody></table></div></div>';
-    App.on('cmtRefresh', 'click', loadComments);
-    loadComments();
+      '<th><input type="checkbox" class="checkbox" id="cmtSelectAll" aria-label="全选"></th><th>ID</th><th>模块</th><th>关联内容</th><th>昵称</th><th>评论内容</th><th>状态</th><th>时间</th><th>操作</th>' +
+      '</tr></thead><tbody id="cmtBody"></tbody></table></div><div id="cmtPager"></div></div>';
+    document.getElementById('cmtStatus').value = commentStatus;
+    document.getElementById('cmtKw').value = commentKeyword;
+    App.on('cmtSearch', 'click', function () {
+      commentStatus = document.getElementById('cmtStatus').value;
+      commentKeyword = document.getElementById('cmtKw').value.trim();
+      loadComments(1);
+    });
+    App.on('cmtKw', 'keydown', function (event) { if (event.key === 'Enter') document.getElementById('cmtSearch').click(); });
+    App.on('cmtRefresh', 'click', function () { loadComments(1); });
+    App.on('cmtSelectAll', 'change', function (event) {
+      document.querySelectorAll('#cmtBody [data-cmt-select]').forEach(function (box) { box.checked = event.target.checked; });
+    });
+    host.querySelectorAll('[data-batch-status]').forEach(function (button) {
+      button.onclick = function () { updateCommentStatus(null, parseInt(button.dataset.batchStatus, 10)); };
+    });
+    loadComments(1);
   };
 
-  async function loadComments() {
-    var j = await App.req('/comment/list');
+  async function loadComments(page) {
+    page = page || 1;
+    var query = '?page=' + page + '&limit=20';
+    if (commentStatus !== '') query += '&status=' + encodeURIComponent(commentStatus);
+    if (commentKeyword) query += '&wd=' + encodeURIComponent(commentKeyword);
+    var j = await App.req('/comment/list' + query);
     var body = document.getElementById('cmtBody');
     if (!body) return;
-    var list = j.data || [];
-    if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty">暂无评论</td></tr>'; return; }
+    var list = (j.data && j.data.list) || [];
+    var selectAll = document.getElementById('cmtSelectAll');
+    if (selectAll) selectAll.checked = false;
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="9" class="empty">暂无评论</td></tr>';
+      document.getElementById('cmtPager').innerHTML = '';
+      return;
+    }
     var mids = { 1: '视频', 2: '文章', 3: '专题' };
     body.innerHTML = list.map(function (c) {
-      return '<tr><td>' + c.comment_id + '</td><td><span class="tag">' + (mids[c.comment_mid] || c.comment_mid) + '</span></td>' +
+      return '<tr><td><input type="checkbox" class="checkbox" data-cmt-select value="' + c.comment_id + '"></td><td>' + c.comment_id + '</td><td><span class="tag">' + (mids[c.comment_mid] || c.comment_mid) + '</span></td>' +
         '<td>' + App.esc(c.target_name || ('ID ' + c.comment_rid)) + '</td>' +
         '<td>' + App.esc(c.comment_name) + '</td>' +
         '<td style="max-width:320px">' + App.esc(c.comment_content) + '</td>' +
+        '<td>' + (c.comment_status ? '<span class="tag green">已通过</span>' : '<span class="tag gold">已隐藏</span>') + '</td>' +
         '<td>' + App.fmtTime(c.comment_time) + '</td>' +
-        '<td><button class="action-btn del" data-del="' + c.comment_id + '">删除</button></td></tr>';
+        '<td>' + (c.comment_status ? '<button class="action-btn" data-status="0" data-id="' + c.comment_id + '">隐藏</button> ' : '<button class="action-btn ok" data-status="1" data-id="' + c.comment_id + '">通过</button> ') +
+        '<button class="action-btn del" data-del="' + c.comment_id + '">删除</button></td></tr>';
     }).join('');
+    body.querySelectorAll('[data-status]').forEach(function (button) {
+      button.onclick = function () { updateCommentStatus([parseInt(button.dataset.id, 10)], parseInt(button.dataset.status, 10), page); };
+    });
     document.querySelectorAll('#cmtBody [data-del]').forEach(function (b) {
       b.onclick = async function () {
         if (!confirm('确定删除该评论？')) return;
         await App.req('/comment/' + b.dataset.del, { method: 'DELETE' });
         App.toast('已删除');
-        loadComments();
+        loadComments(page);
       };
     });
+    document.getElementById('cmtPager').innerHTML = App.pager(j.data, loadComments);
+  }
+
+  async function updateCommentStatus(ids, status, page) {
+    if (!ids) {
+      ids = Array.from(document.querySelectorAll('#cmtBody [data-cmt-select]:checked')).map(function (box) { return parseInt(box.value, 10); });
+    }
+    if (!ids.length) { App.toast('请先选择评论', true); return; }
+    var result = await App.req('/comment/batch/status', { method: 'POST', body: { ids: ids, status: status } });
+    if (result.code !== 0) { App.toast(result.msg || '状态更新失败', true); return; }
+    App.toast(result.msg || '评论状态已更新');
+    loadComments(page || 1);
   }
 })(window);

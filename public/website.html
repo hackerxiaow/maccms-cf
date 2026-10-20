@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>网址导航 - MacCMS</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+<div id="siteHeader"></div>
+<main id="conch-content" class="conch-content">
+  <div class="container directory-page">
+    <header class="directory-head">
+      <div>
+        <h1>网址导航</h1>
+        <p>按分类浏览站点目录</p>
+      </div>
+      <form id="directorySearch" class="directory-search">
+        <input id="directoryKeyword" type="search" placeholder="搜索网站名称或网址" autocomplete="off">
+        <button type="submit">搜索</button>
+      </form>
+    </header>
+    <nav id="directoryTypes" class="directory-types" aria-label="网址分类"></nav>
+    <div class="directory-meta" id="directoryMeta">正在载入…</div>
+    <div id="websiteList" class="directory-grid"></div>
+    <div id="directoryPager" class="directory-pager"></div>
+  </div>
+</main>
+<div id="siteFooter"></div>
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var page = Math.max(1, parseInt(params.get('page') || '1', 10));
+  var typeId = params.get('type_id') || '';
+  var keyword = params.get('wd') || '';
+
+  $(function () {
+    Theme.init().then(function () {
+      Layout.render('website');
+      $('#directoryKeyword').val(keyword);
+      $('#directorySearch').on('submit', function (event) {
+        event.preventDefault();
+        keyword = $('#directoryKeyword').val().trim();
+        page = 1;
+        loadWebsites();
+      });
+      loadWebsites();
+    });
+  });
+
+  function renderCategories(types) {
+    var html = '<button type="button" class="directory-type' + (!typeId ? ' active' : '') + '" data-id="">全部</button>';
+    (types || []).forEach(function (type) {
+      html += '<button type="button" class="directory-type' + (String(type.type_id) === String(typeId) ? ' active' : '') + '" data-id="' + type.type_id + '">' + U.esc(type.type_name) + '</button>';
+    });
+    $('#directoryTypes').html(html).off('click').on('click', '.directory-type', function () {
+      typeId = $(this).attr('data-id') || '';
+      page = 1;
+      loadWebsites();
+    });
+  }
+
+  function loadWebsites() {
+    var query = { page: page, limit: 24, type_id: typeId, wd: keyword };
+    $('#websiteList').html('<div class="directory-empty">正在载入…</div>');
+    API.get('/api/website/list', query).then(function (response) {
+      if (!response || response.code !== 0 || !response.data) {
+        $('#websiteList').html('<div class="directory-empty">网址列表暂时不可用</div>');
+        return;
+      }
+      var data = response.data;
+      renderCategories(data.types);
+      $('#directoryMeta').text('共 ' + data.total + ' 个网址');
+      var list = data.list || [];
+      if (!list.length) {
+        $('#websiteList').html('<div class="directory-empty">暂无符合条件的网址</div>');
+      } else {
+        var html = list.map(function (item) {
+          var image = item.website_logo || item.website_pic;
+          var mark = image
+            ? '<img src="' + U.esc(image) + '" alt="" loading="lazy">'
+            : '<span>' + U.esc((item.website_name || '网').trim().slice(0, 1)) + '</span>';
+          return '<a class="directory-card" href="/api/website/go/' + item.website_id + '" target="_blank" rel="noopener noreferrer">' +
+            '<div class="directory-logo">' + mark + '</div>' +
+            '<div class="directory-card-main"><strong>' + U.esc(item.website_name) + '</strong>' +
+            '<span>' + U.esc(item.website_sub || item.website_url) + '</span></div>' +
+            '<i aria-hidden="true">↗</i></a>';
+        }).join('');
+        $('#websiteList').html(html);
+      }
+      renderPager(data);
+    }).catch(function () {
+      $('#websiteList').html('<div class="directory-empty">网址列表暂时不可用</div>');
+    });
+  }
+
+  function renderPager(data) {
+    var html = '';
+    if (data.page > 1) html += '<button type="button" data-page="' + (data.page - 1) + '">上一页</button>';
+    html += '<span>' + data.page + ' / ' + data.pagecount + '</span>';
+    if (data.page < data.pagecount) html += '<button type="button" data-page="' + (data.page + 1) + '">下一页</button>';
+    $('#directoryPager').html(html).off('click').on('click', 'button[data-page]', function () {
+      page = parseInt($(this).attr('data-page'), 10) || 1;
+      loadWebsites();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+})();
+</script>
+</body>
+</html>

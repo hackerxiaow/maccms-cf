@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>漫画连载 - MacCMS</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+  <style>
+    .manga-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:18px;margin:18px 0}
+    .manga-card{overflow:hidden;border:1px solid rgba(100,116,139,.18);border-radius:12px;background:var(--hl-card,#fff);box-shadow:0 5px 20px rgba(20,30,50,.06);color:inherit;text-decoration:none}
+    .manga-card img{display:block;width:100%;height:220px;object-fit:cover;background:#eef2f7}
+    .manga-card-copy{padding:11px}.manga-card-copy strong,.manga-card-copy span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .manga-card-copy span{margin-top:5px;color:#718096;font-size:13px}.manga-detail{display:grid;grid-template-columns:minmax(160px,250px) 1fr;gap:24px;padding:20px 0}
+    .manga-cover{width:100%;border-radius:12px;background:#eef2f7;object-fit:cover;max-height:360px}.manga-chapters{display:flex;flex-wrap:wrap;gap:8px;margin:15px 0}
+    .manga-chapters button,.manga-pager button{border:1px solid #dbe3ed;border-radius:8px;background:#fff;padding:8px 12px;cursor:pointer;color:inherit}
+    .manga-chapters button:hover,.manga-pager button:hover{border-color:#37c98a;color:#17875a}.manga-reader img{display:block;max-width:100%;height:auto;margin:0 auto 10px}
+    .manga-reader{margin:18px auto;max-width:900px}.manga-pager{display:flex;gap:10px;margin:18px 0}.manga-error{padding:16px;border-radius:10px;background:#fff5ed;color:#92400e}
+    @media(max-width:650px){.manga-detail{grid-template-columns:110px 1fr;gap:14px}.manga-card img{height:190px}}
+  </style>
+</head>
+<body>
+<div id="siteHeader"></div>
+<main class="conch-content"><div class="container hl-ctwrap-item">
+  <div id="mangaView" style="padding:18px 0"><div class="hl-loading">正在载入漫画…</div></div>
+</div></main>
+<div id="siteFooter"></div>
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+(function(){
+  var root=document.getElementById('mangaView');
+  var params=new URLSearchParams(location.search);
+  var id=parseInt(params.get('id')||'0',10);
+  Theme.init().then(function(){Layout.render('manga');if(id)showDetail(id);else showList();});
+
+  function showList(page){
+    page=page||1;
+    var query={page:page,limit:24};
+    var wd=(params.get('wd')||'').trim();if(wd)query.wd=wd;
+    API.get('/api/manga/list',query).then(function(result){
+      if(!result||result.code!==0){root.innerHTML='<div class="hl-empty">漫画暂不可用</div>';return;}
+      var data=result.data||{},rows=data.list||[];
+      var html='<h1 style="font-size:1.5rem;font-weight:900;margin:0 0 14px">漫画连载</h1>'+
+        '<form class="manga-pager" id="mangaSearch"><input class="hl-search-text" name="wd" placeholder="搜索漫画或作者" value="'+U.esc(wd)+'"><button class="hl-search-submit">搜索</button></form>'+
+        '<div class="manga-grid">';
+      rows.forEach(function(item){var pic=item.manga_pic_thumb||item.manga_pic||'/static/theme/img/load.gif';html+='<a class="manga-card" href="/manga.html?id='+item.manga_id+'"><img loading="lazy" src="'+U.esc(pic)+'" alt="'+U.esc(item.manga_name)+'"><div class="manga-card-copy"><strong>'+U.esc(item.manga_name)+'</strong><span>'+U.esc(item.manga_author||item.manga_remarks||'连载中')+'</span></div></a>';});
+      if(!rows.length)html+='<div class="hl-empty">暂无漫画</div>';
+      html+='</div><div class="manga-pager">'+(data.page>1?'<button data-page="'+(data.page-1)+'">上一页</button>':'')+'<span>第 '+data.page+' 页 / 共 '+data.pagecount+' 页</span>'+(data.page<data.pagecount?'<button data-page="'+(data.page+1)+'">下一页</button>':'')+'</div>';
+      root.innerHTML=html;
+      root.querySelector('#mangaSearch').onsubmit=function(event){event.preventDefault();var value=new FormData(event.currentTarget).get('wd')||'';location.href='/manga.html?wd='+encodeURIComponent(value);};
+      root.querySelectorAll('[data-page]').forEach(function(button){button.onclick=function(){showList(Number(button.dataset.page));};});
+      Interact.lazy(root);
+    }).catch(function(){root.innerHTML='<div class="hl-empty">漫画暂不可用</div>';});
+  }
+
+  function showDetail(mangaId){
+    API.get('/api/manga/detail/'+mangaId).then(function(result){
+      if(!result||result.code!==0||!result.data){root.innerHTML='<div class="hl-empty">漫画不存在或已下架</div>';return;}
+      var item=result.data;document.title=item.manga_name+' - 漫画连载';
+      var pic=item.manga_pic_slide||item.manga_pic||'/static/theme/img/load.gif';
+      root.innerHTML='<div class="manga-detail"><img class="manga-cover" src="'+U.esc(pic)+'" alt="'+U.esc(item.manga_name)+'"><div><a href="/manga.html">‹ 返回漫画列表</a><h1>'+U.esc(item.manga_name)+'</h1><p>'+U.esc(item.manga_author||'')+' · '+U.esc(item.manga_remarks||item.manga_serial||'')+'</p><p>'+U.esc(item.manga_blurb||'')+'</p><button id="mangaFollow" type="button" style="padding:7px 12px;border:1px solid #dbe3ed;border-radius:7px;background:#fff;cursor:pointer">关注漫画</button><div id="chapterList"><span class="hl-loading">正在载入章节…</span></div><div id="mangaHint"></div></div></div><div class="manga-reader" id="mangaReader"></div>';
+      document.getElementById('mangaFollow').onclick=function(){var token=localStorage.getItem('maccms_user_token')||'';if(!token){location.href='/user.html';return;}fetch('/api/user/follows/toggle',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({model:'manga',id:mangaId})}).then(function(response){return response.json();}).then(function(data){alert(data.msg||'操作完成');});};
+      loadChapters(mangaId,item);
+    }).catch(function(){root.innerHTML='<div class="hl-empty">漫画暂不可用</div>';});
+  }
+
+  function loadChapters(mangaId,item){
+    var headers=userHeaders();
+    fetch('/api/manga/chapters/'+mangaId,{headers:headers}).then(function(response){return response.json();}).then(function(result){
+      if(result.code!==0){document.getElementById('chapterList').innerHTML='<div class="manga-error">'+U.esc(result.msg||'请先登录')+'　<a href="/user.html">会员登录</a></div>';return;}
+      var data=result.data||{},groups=data.groups||[];
+      var html='';groups.forEach(function(group){html+='<h3>'+U.esc(group.source)+'</h3><div class="manga-chapters">';(group.chapters||[]).forEach(function(chapter){html+='<button data-chapter="'+chapter.index+'">'+U.esc(chapter.name)+'</button>';});html+='</div>';});
+      if(data.locked){html+='<p class="manga-error">阅读需要 '+(data.whole_cost?'整本 '+data.whole_cost+' 积分':'')+(data.chapter_cost?' 每章 '+data.chapter_cost+' 积分':'')+'；选择章节后会按规则扣除积分。</p>';}
+      document.getElementById('chapterList').innerHTML=html||'<div class="hl-empty">暂无章节</div>';
+      document.querySelectorAll('[data-chapter]').forEach(function(button){button.onclick=function(){readChapter(mangaId,Number(button.dataset.chapter));};});
+    }).catch(function(){document.getElementById('chapterList').textContent='章节载入失败';});
+  }
+
+  function readChapter(mangaId,chapter){
+    var hint=document.getElementById('mangaHint');if(hint)hint.textContent='正在打开章节…';
+    fetch('/api/manga/chapters/'+mangaId+'?chapter='+chapter,{headers:userHeaders()}).then(function(response){return response.json();}).then(function(result){
+      if(result.code!==0){if(hint)hint.innerHTML='<span class="manga-error">'+U.esc(result.msg||'无法打开章节')+'　<a href="/user.html">会员中心</a></span>';return;}
+      var reader=document.getElementById('mangaReader');if(!reader)return;
+      var urls=[];(result.data.groups||[]).forEach(function(group){(group.chapters||[]).forEach(function(entry){urls=urls.concat(entry.urls||[]);});});
+      if(hint)hint.textContent='正在阅读第 '+chapter+' 话';
+      reader.innerHTML=urls.map(function(url){return '<img loading="lazy" src="'+U.esc(url)+'" alt="漫画第 '+chapter+' 话">';}).join('')||'<div class="hl-empty">本章暂无图片地址</div>';
+      reader.scrollIntoView({behavior:'smooth',block:'start'});
+    }).catch(function(){if(hint)hint.textContent='章节读取失败';});
+  }
+
+  function userHeaders(){var token=localStorage.getItem('maccms_user_token')||'';return token?{Authorization:'Bearer '+token}:{};}
+})();
+</script>
+</body>
+</html>
