@@ -5,6 +5,26 @@
 
 import type { PlayGroup, Episode } from '../types/index.ts';
 
+const SPECIAL_PINYIN: Record<string, string> = {
+  '重': 'C', '长': 'C', '解': 'J', '单': 'S', '乐': 'Y', '朴': 'P', '仇': 'Q', '查': 'Z',
+  '流': 'L', '繁': 'F', '奥': 'A', '间': 'J', '沙': 'S', '白': 'B', '黑': 'H', '红': 'H',
+  '大': 'D', '小': 'X', '中': 'Z', '国': 'G', '美': 'M', '日': 'R', '韩': 'H', '欧': 'O',
+  '爱': 'A', '情': 'Q', '喜': 'X', '剧': 'J', '动': 'D', '作': 'Z', '科': 'K', '幻': 'H',
+  '恐': 'K', '怖': 'B', '战': 'Z', '争': 'Z', '连': 'L', '续': 'X', '综': 'Z', '艺': 'Y',
+  '漫': 'M', '画': 'H', '纪': 'J', '录': 'L', '片': 'P', '新': 'X', '闻': 'W', '专': 'Z',
+  '题': 'T', '星': 'X', '角': 'J', '色': 'S', '演': 'Y', '员': 'Y', '导': 'D', '阿': 'A',
+  '汪': 'W', '吴': 'W', '胡': 'H', '李': 'L', '王': 'W', '张': 'Z', '刘': 'L', '陈': 'C',
+  '杨': 'Y', '赵': 'Z', '黄': 'H', '周': 'Z', '徐': 'X', '孙': 'S', '马': 'M', '朱': 'Z'
+};
+
+const PINYIN_BOUNDARIES: [string, string][] = [
+  ['啊', 'A'], ['芭', 'B'], ['擦', 'C'], ['搭', 'D'], ['蛾', 'E'],
+  ['发', 'F'], ['噶', 'G'], ['哈', 'H'], ['击', 'J'], ['喀', 'K'],
+  ['垃', 'L'], ['妈', 'M'], ['拿', 'N'], ['哦', 'O'], ['啪', 'P'],
+  ['期', 'Q'], ['然', 'R'], ['撒', 'S'], ['塌', 'T'], ['挖', 'W'],
+  ['昔', 'X'], ['压', 'Y'], ['匝', 'Z']
+];
+
 export class MacPlayUrlParser {
   /**
    * 解码：将 4 个扁平字符串转换为结构化播放组对象
@@ -133,7 +153,7 @@ export class MacPlayUrlParser {
           urls: inGroup.urls.map((u, i) => ({ ...u, nid: i + 1 })),
         });
       } else {
-        // 已有播放线路：按集数名称或 URL 组合去重合并
+        // 已有播放线路：按集数名称与 URL 组合去重合并
         const curGroup = groupMap.get(inGroup.from)!;
         const seenUrls = new Set(curGroup.urls.map(u => u.url.trim()));
         const seenNames = new Set(curGroup.urls.map(u => u.name.trim()));
@@ -143,14 +163,22 @@ export class MacPlayUrlParser {
           const n = inEp.name.trim();
 
           // 如果该集数既未出现过相同的 URL，也未出现过相同的集数名，则追加
-          // 或即使集名重复但 URL 不同，判定为分段或更新
-          if (!seenUrls.has(u)) {
+          if (!seenUrls.has(u) && !seenNames.has(n)) {
             curGroup.urls.push({
               ...inEp,
               nid: curGroup.urls.length + 1,
             });
             seenUrls.add(u);
             seenNames.add(n);
+          } else if (!seenUrls.has(u) && seenNames.has(n)) {
+            // 集名相同但 URL 发生变化：更新该集的 URL（支持上游源修复更新）
+            const targetEp = curGroup.urls.find(item => item.name.trim() === n);
+            if (targetEp) {
+              targetEp.url = u;
+            } else {
+              curGroup.urls.push({ ...inEp, nid: curGroup.urls.length + 1 });
+            }
+            seenUrls.add(u);
           }
         }
       }
@@ -160,32 +188,42 @@ export class MacPlayUrlParser {
   }
 
   /**
-   * 获取中文字符串的首字母 (拼音首字母简单映射与英文提取)
+   * 获取中文字符串的首字母 (规范汉字拼音首字母 A-Z 或英文数字提取)
    */
   static getFirstLetter(str: string): string {
     if (!str || !str.trim()) return '';
     const char = str.trim().charAt(0);
-    // 如果是英文字母
+
+    // 1. 英文字母直接大写返回
     if (/^[a-zA-Z]$/.test(char)) {
       return char.toUpperCase();
     }
-    // 如果是数字
+
+    // 2. 数字直接返回
     if (/^[0-9]$/.test(char)) {
       return char;
     }
-    // 常见拼音多音字映射范围简易提取
-    try {
-      const pinyinTable: [number, string][] = [
-        [45217, 'A'], [45253, 'B'], [45761, 'C'], [46318, 'D'], [46826, 'E'],
-        [47010, 'F'], [47297, 'G'], [47614, 'H'], [48119, 'J'], [49062, 'K'],
-        [49324, 'L'], [49896, 'M'], [50371, 'N'], [50614, 'O'], [50622, 'P'],
-        [50906, 'Q'], [51387, 'R'], [51446, 'S'], [52218, 'T'], [52698, 'W'],
-        [52980, 'X'], [53689, 'Y'], [54481, 'Z']
-      ];
-      // 取 UTF-8 / GBK 模糊首字母
-      return char.toUpperCase();
-    } catch {
-      return '';
+
+    // 3. 常见影视词高频汉字字典直出
+    if (SPECIAL_PINYIN[char]) {
+      return SPECIAL_PINYIN[char];
     }
+
+    // 4. Unicode / 拼音边界音序比对
+    try {
+      if (char.localeCompare('啊', 'zh-Hans-CN') < 0) {
+        return 'A';
+      }
+      for (let i = PINYIN_BOUNDARIES.length - 1; i >= 0; i--) {
+        if (char.localeCompare(PINYIN_BOUNDARIES[i][0], 'zh-Hans-CN') >= 0) {
+          return PINYIN_BOUNDARIES[i][1];
+        }
+      }
+    } catch {
+      // 容错降级
+    }
+
+    // 5. 兜底非汉字标点或未能匹配的字符
+    return 'A';
   }
 }

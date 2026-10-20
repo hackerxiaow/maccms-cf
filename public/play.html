@@ -25,13 +25,13 @@
             <!-- 播放提醒 -->
             <div class="hl-player-notice hl-this-box hl-text-white" id="playerNotice">
               <a class="hl-close-this" href="javascript:;"><i class="iconfont hl-icon-cuo"></i></a>
-              <span><strong><i class="hl-text-conch">提醒：</i></strong>不要轻易相信视频中的广告，谨防上当受骗！如果无法播放请刷新页面或切换线路。</span>
+              <span><strong><i class="hl-text-conch">提醒：</i></strong>不要轻易相信视频中的水印广告，谨防上当受骗！如果无法播放请点击切换线路或使用“报错”。</span>
             </div>
 
-            <!-- 播放器 -->
+            <!-- 播放器容器 -->
             <div id="dplayer" style="width:100%;height:100%;"></div>
 
-            <!-- 播放器滑出操作面板 -->
+            <!-- 播放器快捷操作面板 -->
             <div class="hl-player-setups hl-text-white hl-tran5" id="playerSetups">
               <div class="hl-setups-wrap">
                 <a href="javascript:;" id="btnRefresh"><i class="iconfont hl-icon-shuaxin"></i><span>刷新</span></a>
@@ -39,6 +39,7 @@
                 <a href="javascript:;" id="btnNext"><i class="iconfont hl-icon-xiayiji"></i><span>下一集</span></a>
                 <a href="javascript:;" id="btnTheater"><i class="iconfont hl-icon-shipin"></i><span>剧场</span></a>
                 <a href="javascript:;" id="btnLights"><i class="iconfont hl-icon-mingxing"></i><span>关灯</span></a>
+                <a href="javascript:;" id="btnReport"><i class="iconfont hl-icon-tishi"></i><span>报错</span></a>
               </div>
               <div class="hl-setups-op"><a href="javascript:;" id="btnSetups"><i class="iconfont hl-icon-jiantouzuo"></i></a></div>
             </div>
@@ -56,7 +57,7 @@
             </div>
           </div>
 
-          <!-- 评论 (module/comment.html) -->
+          <!-- 评论互动 -->
           <div class="hl-row-box hl-rb-comm clearfix" id="pinglun">
             <div class="hl-rb-head clearfix">
               <h3 class="hl-rb-title">边看边评</h3>
@@ -69,64 +70,83 @@
               <div class="hl-comm-write hl-comm-start" style="margin-top:10px;">
                 <textarea class="hl-comm-content" id="cmtText" placeholder="说说你对这一集的看法…"></textarea>
               </div>
-              <div class="hl-comm-handle" style="margin-top:10px;">
-                <button class="hl-comm-submit" onclick="submitComment()">发表评论</button>
+              <div class="hl-comm-sub" style="margin-top:10px;text-align:right;">
+                <button class="hl-btn-conch hl-bg-conch" type="button" onclick="submitComment()">发表评论</button>
               </div>
             </div>
-            <div class="hl-comm-list" id="cmtList"></div>
+            <div class="hl-comm-box" id="cmtList" style="margin-top:16px;"></div>
           </div>
         </div>
 
-      <!-- 侧栏播放列表 -->
-      <div class="hl-col-xs-12 hl-col-md-30w hl-col-lg-3">
-        <div class="hl-play-scrollbar">
-          <div class="hl-row-box hl-rb-playlist hl-tabs-item clearfix" id="playlistBox" style="padding:0;">
+        <!-- 播放列表侧栏 -->
+        <div class="hl-col-xs-12 hl-col-md-30w hl-col-lg-3">
+          <div class="hl-row-box clearfix" id="playlistBox">
             <div class="hl-rb-head clearfix">
-              <h3 class="hl-rb-title">播放列表</h3>
+              <div class="hl-rb-title hl-site-tabs hl-text-site clearfix" id="sourceTabs"></div>
             </div>
-            <div class="hl-play-source">
-              <div class="hl-plays-wrap hl-tabs-swiper">
-                <div class="hl-plays-from hl-tabs" id="sourceTabs"></div>
-              </div>
-              <div id="sourceBoxes"></div>
-            </div>
+            <div class="hl-tabs-wrap clearfix" id="sourceBoxes"></div>
           </div>
         </div>
       </div>
     </div>
   </div>
 </div>
+
+<!-- 视频播放故障报错弹窗 -->
+<div id="reportModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:99999;align-items:center;justify-content:center;">
+  <div style="background:var(--bg-card,#fff);width:90%;max-width:440px;border-radius:10px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,0.3);position:relative;">
+    <h3 style="margin:0 0 14px;font-size:1.15rem;font-weight:700;">视频播放故障报错</h3>
+    <div style="font-size:.9rem;color:var(--tx-mute,#888);margin-bottom:12px;" id="reportTargetInfo"></div>
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:.85rem;margin-bottom:4px;">您的称呼 (选填)</label>
+      <input type="text" id="reportName" placeholder="影迷朋友" style="width:100%;padding:8px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+    </div>
+    <div style="margin-bottom:16px;">
+      <label style="display:block;font-size:.85rem;margin-bottom:4px;">故障现象描述 <span style="color:red;">*</span></label>
+      <textarea id="reportContent" rows="3" placeholder="例如：黑屏无法播放 / 卡顿缓冲极慢 / 声音画面不同步…" style="width:100%;padding:8px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;resize:none;"></textarea>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;">
+      <button type="button" onclick="$('#reportModal').hide()" style="padding:8px 16px;border:1px solid #ccc;background:none;border-radius:6px;cursor:pointer;">取消</button>
+      <button type="button" id="btnSubmitReport" style="padding:8px 20px;background:var(--hl-site,#0099ff);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;">提交报错</button>
+    </div>
+  </div>
 </div>
 
 <div id="siteFooter"></div>
 
 <script src="/static/theme/js/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>
 <script src="/static/theme/theme.js"></script>
 <script src="/static/theme/layout.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.js"></script>
 <script>
-var params = new URLSearchParams(location.search);
-var vodId = parseInt(params.get('id') || '0', 10);
-var sid = parseInt(params.get('sid') || '0', 10);
-var nid = parseInt(params.get('nid') || '0', 10);
-var vod = null, dp = null, playerCfg = {};
+var vodId = parseInt(new URLSearchParams(location.search).get('id') || '0', 10);
+var sid = parseInt(new URLSearchParams(location.search).get('sid') || '0', 10);
+var nid = parseInt(new URLSearchParams(location.search).get('nid') || '0', 10);
+var vod = null;
+var playerCfg = {};
+var playerBackupCfg = {};
+var dp = null;
 
 $(function () {
-  Theme.init().then(function () { Layout.render('play');
+  Theme.init().then(function () {
+    Layout.render('play');
+    bindGlobalEvents();
     loadPlayers();
     loadVod();
   });
 });
 
-function doSearch(kw) {
-  kw = (kw || '').trim();
-  if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
-}
-
 function loadPlayers() {
   API.get('/api/players').then(function (j) {
-    if (j.code === 0) j.data.forEach(function (p) { playerCfg[p.code.toLowerCase()] = p.parse_url; });
+    if (j.code === 0 && Array.isArray(j.data)) {
+      j.data.forEach(function (p) {
+        playerCfg[p.code.toLowerCase()] = p.parse_url;
+        if (p.player_parse2) {
+          playerBackupCfg[p.code.toLowerCase()] = p.player_parse2;
+        }
+      });
+    }
   });
 }
 
@@ -169,6 +189,9 @@ function renderSources() {
 
   var tabs = $('#sourceTabs');
   var boxes = $('#sourceBoxes');
+  // 关键修复：先清空原有内容，防止多次点击导致 DOM 与事件监听翻倍累加
+  tabs.empty();
+  boxes.empty();
 
   groups.forEach(function (g, gi) {
     var btn = $('<a class="hl-tabs-btn' + (gi === sid ? ' active' : '') + '"><i class="iconfont hl-icon-shipin"></i>&nbsp;' + U.esc(g.from.toUpperCase()) + '</a>');
@@ -189,7 +212,15 @@ function renderSources() {
     boxes.append(box);
   });
 
-  tabs.on('click', '.hl-tabs-btn', function () {
+  Interact.bindShowAll($('#playlistBox')[0]);
+}
+
+function bindGlobalEvents() {
+  var tabs = $('#sourceTabs');
+  var boxes = $('#sourceBoxes');
+
+  // 事件委托只绑定一次，杜绝内存泄漏
+  tabs.off('click').on('click', '.hl-tabs-btn', function () {
     var gi = $(this).data('gi');
     tabs.find('.hl-tabs-btn').removeClass('active');
     $(this).addClass('active');
@@ -199,34 +230,107 @@ function renderSources() {
     playEpisode();
   });
 
-  boxes.on('click', '.hl-plays-list a[data-nid]', function () {
+  boxes.off('click').on('click', '.hl-plays-list a[data-nid]', function () {
     nid = parseInt($(this).data('nid'), 10);
     renderSources();
     playEpisode();
   });
 
-  Interact.bindShowAll($('#playlistBox')[0]);
+  $('#btnNext').on('click', playNext);
+  $('#btnPrev').on('click', playPrev);
+  $('#btnRefresh').on('click', function () { playEpisode(); });
+  $('#btnSetups').on('click', function () { $('#playerSetups').toggleClass('active'); });
+  $('.hl-close-this').on('click', function () { $('#playerNotice').hide(); });
+
+  $('#btnTheater').on('click', function () {
+    document.body.classList.toggle('theater-mode');
+    if (document.body.classList.contains('theater-mode')) {
+      $('#playerWrap').css({ height: 'calc(100vh - 40px)' });
+      $('#conch-header').fadeOut();
+    } else {
+      $('#playerWrap').css({ height: '' });
+      $('#conch-header').fadeIn();
+    }
+  });
+
+  $('#btnLights').on('click', function () {
+    document.body.classList.toggle('lights-off');
+  });
+
+  // 报错弹窗交互
+  $('#btnReport').on('click', function () {
+    var g = (vod.play_groups || [])[sid];
+    var ep = g && g.urls ? g.urls[nid] : null;
+    $('#reportTargetInfo').text('当前影片：' + vod.vod_name + ' | 线路：' + (g ? g.from : '') + ' | ' + (ep ? ep.name : ''));
+    $('#reportModal').css('display', 'flex');
+  });
+
+  $('#btnSubmitReport').on('click', function () {
+    var content = $('#reportContent').val().trim();
+    if (!content) { alert('请填写故障现象描述'); return; }
+    var g = (vod.play_groups || [])[sid];
+    var ep = g && g.urls ? g.urls[nid] : null;
+
+    API.post('/api/gbook/add', {
+      name: $('#reportName').val().trim() || '影迷',
+      content: content,
+      vod_name: vod.vod_name,
+      play_from: g ? g.from : '',
+      play_part: ep ? ep.name : '',
+    }).then(function (j) {
+      if (j.code === 0) {
+        alert('报错已收到，技术管理员将尽快排查修复！');
+        $('#reportContent').val('');
+        $('#reportModal').hide();
+      } else {
+        alert(j.msg || '提交失败');
+      }
+    });
+  });
 }
 
 function playEpisode() {
-  var group = vod.play_groups[sid];
+  var group = (vod.play_groups || [])[sid];
   if (!group || !group.urls[nid]) return;
   var ep = group.urls[nid];
   var from = (ep.from || group.from || 'dplayer').toLowerCase();
   var parse = playerCfg[from] || '';
+  var parse2 = playerBackupCfg[from] || '';
 
   history.replaceState(null, '', '/play.html?id=' + vodId + '&sid=' + sid + '&nid=' + nid);
   $('#nowTitle').html(U.esc(vod.vod_name) + ' <em style="font-style:normal;font-size:.95rem;color:var(--tx-mute,#888)">' + U.esc(ep.name) + '</em>');
 
-  var saved = Interact.history.progress(vodId, sid, nid);
+  // 点播鉴权检查
+  API.post('/api/vod/check_play', { vod_id: vodId, nid: nid + 1 }).then(function (ck) {
+    if (ck.code !== 0 && ck.data && !ck.data.canPlay) {
+      destroyPlayer();
+      $('#dplayer').html(
+        '<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#111;color:#fff;padding:20px;text-align:center;">' +
+        '<i class="iconfont hl-icon-suo" style="font-size:3rem;color:var(--hl-site,#0099ff);margin-bottom:12px;"></i>' +
+        '<h3 style="margin:0 0 8px;">观看权限提示</h3>' +
+        '<p style="color:#aaa;max-width:360px;">' + U.esc(ck.data.reason || '当前视频需要权限') + '</p>' +
+        '<div style="margin-top:16px;"><a href="/user.html" style="padding:8px 24px;background:var(--hl-site,#0099ff);color:#fff;border-radius:20px;font-weight:700;">前往会员中心充值/开通VIP</a></div>' +
+        '</div>'
+      );
+      return;
+    }
 
+    startPlay(ep, from, parse, parse2);
+  });
+}
+
+function startPlay(ep, from, parse, parse2) {
+  var saved = Interact.history.progress(vodId, sid, nid);
   destroyPlayer();
 
   var isHls = ep.url.indexOf('.m3u8') >= 0 || from.indexOf('m3u8') >= 0 || from === 'dplayer';
   var isMp4 = ep.url.indexOf('.mp4') >= 0;
 
   if ((parse && !isHls && !isMp4) || from === 'iframe') {
-    $('#dplayer').html('<iframe src="' + (parse ? parse + encodeURIComponent(ep.url) : ep.url) + '" width="100%" height="100%" frameborder="0" allowfullscreen="true" webkitallowfullscreen="true" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation" style="border:none;background:#000;"></iframe>');
+    var iframeSrc = parse ? parse + encodeURIComponent(ep.url) : ep.url;
+    $('#dplayer').html(
+      '<iframe id="playIframe" src="' + iframeSrc + '" width="100%" height="100%" frameborder="0" allowfullscreen="true" webkitallowfullscreen="true" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation" style="border:none;background:#000;"></iframe>'
+    );
     return;
   }
 
@@ -244,7 +348,10 @@ function playEpisode() {
     hotkey: true,
     preload: 'auto',
     volume: 0.8,
-    video: { url: ep.url, type: isHls ? 'hls' : 'auto' }
+    video: {
+      url: ep.url,
+      type: isHls ? 'hls' : 'auto'
+    }
   });
 
   if (saved > 5) {
@@ -260,6 +367,9 @@ function playEpisode() {
       time: Math.floor(dp.video.currentTime), duration: Math.floor(dp.video.duration || 0)
     });
   });
+
+  // 同步服务端历史记录
+  API.post('/api/user/history', { mid: 1, rid: vodId, sid: sid, nid: nid });
 
   dp.on('ended', function () { playNext(); });
 }
@@ -279,37 +389,20 @@ function playPrev() {
   else alert('已经是第一集了');
 }
 
-$('#btnNext').on('click', playNext);
-$('#btnPrev').on('click', playPrev);
-$('#btnRefresh').on('click', function () { playEpisode(); });
-$('#btnSetups').on('click', function () { $('#playerSetups').toggleClass('active'); });
-$('.hl-close-this').on('click', function () { $('#playerNotice').hide(); });
-$('#btnTheater').on('click', function () {
-  document.body.classList.toggle('theater-mode');
-  if (document.body.classList.contains('theater-mode')) {
-    $('#playerWrap').css({ height: 'calc(100vh - 40px)' });
-    $('#conch-header').fadeOut();
-  } else {
-    $('#playerWrap').css({ height: '' });
-    $('#conch-header').fadeIn();
-  }
-});
-$('#btnLights').on('click', function () {
-  document.body.classList.toggle('lights-off');
-});
-
 function loadComments() {
   API.get('/api/comment/list', { mid: 1, rid: vodId }).then(function (j) {
     var list = (j.code === 0 && j.data) ? j.data : [];
+    $('#cmtCount').text(list.length);
     var box = $('#cmtList');
-    if (!list.length) { box.html('<div class="hl-empty">还没有评论，来说两句</div>'); return; }
+    if (!list.length) { box.html('<div class="hl-empty">还没有评论，快来抢沙发~</div>'); return; }
     box.html('');
     list.forEach(function (c) {
       box.append(
-        '<div class="hl-comm-item"><div class="hl-comm-avatar">' + U.esc((c.comment_name || '影').charAt(0)) + '</div>' +
-        '<div style="flex:1;min-width:0"><div class="hl-comm-head"><span class="hl-comm-name">' + U.esc(c.comment_name) + '</span>' +
-        '<span class="hl-comm-time">' + (c.comment_time ? new Date(c.comment_time * 1000).toLocaleString() : '') + '</span></div>' +
-        '<div class="hl-comm-text">' + U.esc(c.comment_content) + '</div></div></div>'
+        '<div class="hl-comm-item" style="display:flex;gap:12px;margin-bottom:14px;border-bottom:1px solid var(--bd-color,#eee);padding-bottom:10px;">' +
+        '<div class="hl-comm-avatar" style="width:36px;height:36px;border-radius:50%;background:var(--hl-site,#0099ff);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;">' + U.esc((c.comment_name || '影').charAt(0)) + '</div>' +
+        '<div style="flex:1;min-width:0"><div class="hl-comm-head" style="display:flex;justify-content:space-between;margin-bottom:4px;"><span class="hl-comm-name" style="font-weight:700;">' + U.esc(c.comment_name) + '</span>' +
+        '<span class="hl-comm-time" style="font-size:.8rem;color:#888;">' + (c.comment_time ? new Date(c.comment_time * 1000).toLocaleString() : '') + '</span></div>' +
+        '<div class="hl-comm-text" style="font-size:.9rem;line-height:1.5;">' + U.esc(c.comment_content) + '</div></div></div>'
       );
     });
   });

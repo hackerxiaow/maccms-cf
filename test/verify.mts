@@ -120,12 +120,46 @@ assert.strictEqual(
 const secret = 'test-secret-key-123';
 const token = await AuthUtils.generateToken('admin', secret);
 assert(token && token.includes('.'), 'Token 应包含载荷与签名两段');
-const isValid = await AuthUtils.verifyToken(token, secret);
-assert.strictEqual(isValid, true, '正确密钥应验签成功');
-const isInvalid = await AuthUtils.verifyToken(token, 'wrong-secret');
-assert.strictEqual(isInvalid, false, '错误密钥应验签失败');
+const verifyOk = await AuthUtils.verifyToken(token, secret);
+assert.strictEqual(verifyOk.valid, true, '正确密钥应验签成功');
+assert.strictEqual(verifyOk.username, 'admin', '应正确还原 Token 中的用户名');
+const verifyBad = await AuthUtils.verifyToken(token, 'wrong-secret');
+assert.strictEqual(verifyBad.valid, false, '错误密钥应验签失败');
 
 console.log('✓ AuthUtils 散列与 Session Token 鉴权校验通过');
+
+// 5. 中文字符首字母拼音提取 (vod_letter 必须落在 A-Z)
+const letterCases: [string, string][] = [
+  ['流浪地球2', 'L'],
+  ['繁花', 'F'],
+  ['奥本海默', 'A'],
+  ['间谍过家家', 'J'],
+  ['沙丘2', 'S'],
+  ['你好李焕英', 'N'],
+  ['中国机长', 'Z'],
+  ['Avatar', 'A'],
+  ['2024春节档', '2'],
+];
+for (const [title, expected] of letterCases) {
+  const got = MacPlayUrlParser.getFirstLetter(title);
+  assert(/^[A-Z0-9]$/.test(got), `首字母 "${got}" 必须是 A-Z 或数字 (${title})`);
+  assert.strictEqual(got, expected, `${title} 的首字母应为 ${expected}`);
+}
+console.log('✓ 中文影片拼音首字母 A-Z 索引校验通过');
+
+// 6. 采集过滤规则：多播放组重命名不应全部覆盖为同名
+const multiFrom = MacPlayUrlParser.parse('dplayer$$$kkm3u8', 'a$http://a.m3u8$$$b$http://b.m3u8');
+assert.strictEqual(multiFrom.length, 2);
+assert.deepStrictEqual(multiFrom.map(g => g.from), ['dplayer', 'kkm3u8']);
+console.log('✓ 多播放线路编解码校验通过');
+
+// 7. 充值卡号与卡密随机生成
+const pair1 = AuthUtils.generateCardPair();
+const pair2 = AuthUtils.generateCardPair();
+assert(/^MC\d{6}[A-Z0-9]{6}$/.test(pair1.cardNo), '充值卡号格式应规范');
+assert.strictEqual(pair1.cardPwd.length, 12, '卡密长度应为 12');
+assert.notStrictEqual(pair1.cardPwd, pair2.cardPwd, '两次生成卡密不应相同');
+console.log('✓ 充值卡号与卡密随机生成校验通过');
 
 console.log('====================================================');
 console.log('🎉 全部单元与协议测试 100% 通过！');

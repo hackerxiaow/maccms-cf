@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>视频下载 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+
+<div id="siteHeader"></div>
+
+<div id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item" style="padding:24px 0;max-width:960px;">
+    <!-- 头部影片概况 -->
+    <div id="downHero" class="hl-row-box" style="padding:24px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:20px;">
+      <div class="hl-loading">正在载入影片下载资源…</div>
+    </div>
+
+    <!-- 下载源列表 -->
+    <div class="hl-row-box" style="padding:24px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+      <div class="hl-rb-head clearfix">
+        <h3 class="hl-rb-title" style="font-size:1.15rem;font-weight:800;">高速下载线路与分集链接</h3>
+      </div>
+      <div id="downGroupsBox" style="margin-top:16px;"></div>
+      <div id="downEmpty" class="hl-empty" style="display:none;padding:40px 0;">该影片暂未提供独立下载线路，请直接在详情页在线播放</div>
+    </div>
+  </div>
+</div>
+
+<div id="siteFooter"></div>
+
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+var vodId = parseInt(new URLSearchParams(location.search).get('id') || '0', 10);
+
+$(function () {
+  Theme.init().then(function () {
+    Layout.render('down');
+    if (!vodId) { location.href = '/'; return; }
+    loadDownVod();
+  });
+});
+
+function loadDownVod() {
+  API.get('/api/vod/detail/' + vodId).then(function (j) {
+    if (j.code !== 0 || !j.data) {
+      $('#downHero').html('<div class="hl-empty">影片不存在或已下架</div>');
+      return;
+    }
+    var v = j.data;
+    document.title = v.vod_name + ' 高速下载列表 - MacCMS 影视';
+
+    var heroHtml =
+      '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;">' +
+      '<div class="hl-lazy" data-original="' + U.esc(v.vod_pic || '') + '" style="width:90px;height:126px;border-radius:8px;background-size:cover;background-position:center;flex-shrink:0;"></div>' +
+      '<div style="flex:1;min-width:240px;">' +
+      '<h1 style="margin:0 0 6px;font-size:1.4rem;font-weight:900;">' + U.esc(v.vod_name) + '</h1>' +
+      '<div style="font-size:.85rem;color:var(--tx-mute,#888);margin-bottom:6px;">' +
+      (v.vod_remarks ? '<span style="color:var(--hl-site,#0099ff);margin-right:10px;">' + U.esc(v.vod_remarks) + '</span>' : '') +
+      '<span>' + U.esc(v.vod_year || '') + ' ' + U.esc(v.vod_area || '') + ' ' + U.esc(v.vod_class || '') + '</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:12px;margin-top:10px;">' +
+      '<a href="/play.html?id=' + v.vod_id + '" style="padding:6px 18px;background:var(--hl-site,#0099ff);color:#fff;border-radius:6px;font-size:.85rem;text-decoration:none;font-weight:700;">在线播放</a>' +
+      '<a href="/detail.html?id=' + v.vod_id + '" style="padding:6px 18px;border:1px solid #ddd;color:inherit;border-radius:6px;font-size:.85rem;text-decoration:none;">查看详情</a>' +
+      '</div>' +
+      '</div>' +
+      '</div>';
+    $('#downHero').html(heroHtml);
+    Interact.lazy($('#downHero')[0]);
+
+    renderDownGroups(v.down_groups || []);
+  });
+}
+
+function renderDownGroups(groups) {
+  var box = $('#downGroupsBox');
+  box.html('');
+  if (!groups || !groups.length) {
+    $('#downEmpty').show();
+    return;
+  }
+  $('#downEmpty').hide();
+
+  groups.forEach(function (g, gi) {
+    var groupHtml =
+      '<div style="margin-bottom:20px;border:1px solid var(--bd-color,#eee);border-radius:8px;padding:16px;">' +
+      '<div style="font-weight:800;font-size:1rem;margin-bottom:10px;display:flex;align-items:center;gap:8px;">' +
+      '<i class="iconfont hl-icon-xiazai hl-text-conch"></i>' +
+      '<span>下载线路 ' + (gi + 1) + ' (' + U.esc(g.from.toUpperCase()) + ')</span>' +
+      '</div>' +
+      '<ul class="hl-plays-list clearfix" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:8px;padding:0;margin:0;list-style:none;">';
+
+    g.urls.forEach(function (ep) {
+      groupHtml +=
+        '<li>' +
+        '<a href="' + U.esc(ep.url) + '" target="_blank" download style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-subs,#f8fafc);border-radius:6px;text-decoration:none;color:inherit;font-size:.9rem;border:1px solid var(--bd-color,#eee);">' +
+        '<span class="hl-lc-1">' + U.esc(ep.name) + '</span>' +
+        '<i class="iconfont hl-icon-xiazai" style="color:var(--hl-site,#0099ff);font-size:1rem;"></i>' +
+        '</a></li>';
+    });
+
+    groupHtml += '</ul></div>';
+    box.append(groupHtml);
+  });
+}
+</script>
+</body>
+</html>
