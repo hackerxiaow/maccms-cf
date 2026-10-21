@@ -6,14 +6,35 @@
 
   var API = '/api/admin';
 
+  // Keep a small set of primary modules; group detailed pages inside each module.
   var modules = [
-    { key: 'home', name: '工作台', permission: '', routes: ['overview'] },
-    { key: 'content', name: '内容管理', permission: 'content', routes: ['vod', 'type', 'manga', 'art', 'topic', 'website', 'actor', 'transfer', 'recycle'] },
-    { key: 'collect', name: '采集配置', permission: 'collect', routes: ['collect', 'player'] },
-    { key: 'users', name: '用户中心', permission: 'users', routes: ['user', 'signs', 'messages', 'access'] },
-    { key: 'ops', name: '运营互动', permission: 'ops', routes: ['gbook', 'comment', 'ads', 'urlsend', 'danmaku', 'chat', 'shares', 'cash', 'coupons', 'goods', 'seckill', 'mall-orders', 'notices', 'play-fails'] },
-    { key: 'live', name: '直播管理', permission: 'ops', routes: ['live'] },
-    { key: 'system', name: '系统管理', permission: 'system', routes: ['theme', 'tools', 'analytics', 'audit', 'apidoc', 'database', 'config', 'accounts', 'media', 'quality', 'tasks', 'monitor'] }
+    { key: 'home', name: '工作台', permission: '', routes: ['overview'], groups: [{ key: 'overview', name: '工作台', icon: '⌂', routes: ['overview'] }] },
+    { key: 'content', name: '内容管理', permission: 'content', routes: ['vod', 'type', 'manga', 'art', 'topic', 'website', 'actor', 'transfer', 'recycle'], groups: [
+      { key: 'video', name: '视频与分类', icon: '▣', routes: ['vod', 'type'] },
+      { key: 'articles', name: '文章与专题', icon: '✎', routes: ['art', 'topic'] },
+      { key: 'other-content', name: '扩展内容', icon: '▤', routes: ['manga', 'website', 'actor'] },
+      { key: 'content-tools', name: '内容维护', icon: '⚙', routes: ['transfer', 'recycle'] }
+    ] },
+    { key: 'collect', name: '采集配置', permission: 'collect', routes: ['collect', 'player'], groups: [
+      { key: 'sources', name: '采集中心', icon: '⇩', routes: ['collect'] },
+      { key: 'players', name: '播放与下载', icon: '▷', routes: ['player'] }
+    ] },
+    { key: 'users', name: '用户中心', permission: 'users', routes: ['user', 'signs', 'messages', 'access'], groups: [
+      { key: 'members', name: '会员管理', icon: '♙', routes: ['user', 'access'] },
+      { key: 'member-services', name: '会员服务', icon: '✉', routes: ['signs', 'messages'] }
+    ] },
+    { key: 'ops', name: '运营互动', permission: 'ops', routes: ['gbook', 'comment', 'ads', 'urlsend', 'danmaku', 'chat', 'shares', 'cash', 'coupons', 'goods', 'seckill', 'mall-orders', 'withdrawals', 'posts', 'notices', 'play-fails'], groups: [
+      { key: 'interaction', name: '互动与反馈', icon: '☏', routes: ['gbook', 'comment', 'danmaku', 'chat', 'shares', 'notices', 'play-fails'] },
+      { key: 'marketing', name: '会员营销', icon: '％', routes: ['cash', 'coupons', 'goods', 'seckill', 'mall-orders', 'withdrawals'] },
+      { key: 'community', name: '会员社区', icon: '♙', routes: ['posts'] },
+      { key: 'promotion', name: '站点推广', icon: '↗', routes: ['ads', 'urlsend'] }
+    ] },
+    { key: 'live', name: '直播管理', permission: 'ops', routes: ['live'], groups: [{ key: 'live', name: '直播频道', icon: '▹', routes: ['live'] }] },
+    { key: 'system', name: '系统管理', permission: 'system', routes: ['theme', 'tools', 'analytics', 'audit', 'apidoc', 'database', 'config', 'accounts', 'media', 'quality', 'resources', 'translations', 'ai', 'tasks', 'monitor'], groups: [
+      { key: 'settings', name: '系统设置', icon: '⚙', routes: ['config', 'accounts', 'database', 'apidoc'] },
+      { key: 'content-ops', name: '模板与内容运维', icon: '◈', routes: ['theme', 'tools', 'media', 'quality', 'resources', 'translations', 'ai'] },
+      { key: 'site-ops', name: '统计与运行监控', icon: '▥', routes: ['analytics', 'audit', 'tasks', 'monitor'] }
+    ] }
   ];
 
   var routeMeta = {
@@ -38,8 +59,11 @@
     apidoc: ['开放接口文档', 'MacCMS v8/v10 Provide、REST 与直播接口说明', '⌘'],
     database: ['数据库维护', 'D1 表行数、JSON 备份导出与分批还原', '▦'],
     accounts: ['管理员与权限', '多管理员账号、角色权限和后台操作边界', '♙'],
-    media: ['R2 媒体库', '将海报与图片上传到 Cloudflare R2 并管理引用地址', '▧'],
+    media: ['媒体库', '管理 R2、Telegram 和 Telegraph 附件及引用地址', '▧'],
     quality: ['内容质检', '按可配置规则扫描标题、简介、播放源和图片字段', '✓'],
+    resources: ['资源巡检', '分批检查内容图片与网址资源的 HTTP 可用性', '⌕'],
+    translations: ['内容翻译', '按语言维护视频、文章和扩展模型字段译文', '文'],
+    ai: ['AI 内容助手', '生成简介、标签分类和 SEO 建议，人工审核后使用', '✧'],
     tasks: ['边缘定时任务', '通过 Workers Cron 执行采集、日志清理与计数维护', '◷'],
     monitor: ['云端运行监控', '检查 D1 表、媒体桶绑定和后台任务状态', '⌁'],
     transfer: ['内容导入导出', 'JSON 批量迁移 MacCMS 内容模型', '⇵'],
@@ -48,6 +72,8 @@
     messages: ['会员私信', '查看与管理会员站内私信', '✉'],
     shares: ['分享记录', '查看内容分享来源与访问记录', '↗'],
     cash: ['积分与资金流水', '人工调整会员积分并记录审计流水', '¥'],
+    withdrawals: ['提现审核', '审核会员钱包提现、登记打款或驳回退款', '¥'],
+    posts: ['动态审核', '审核会员发布的社区动态', '♙'],
     coupons: ['优惠券', '管理优惠码、折扣和领取额度', '％'],
     goods: ['积分商城商品', '管理商品、积分定价和库存', '▣'],
     seckill: ['限时秒杀', '秒杀活动、活动库存与会员订单', '◷'],
@@ -70,6 +96,7 @@
     activeModule: 'home',
     activeView: 'overview',
     openTabs: ['overview'],
+    sidebarExpanded: {},
 
     headers: function () {
       return {
@@ -187,6 +214,11 @@
       };
       var sidebar = document.getElementById('sidebarMenu');
       if (sidebar) sidebar.onclick = function (event) {
+        var group = event.target.closest('[data-sidebar-group]');
+        if (group) {
+          self.toggleSidebarGroup(group.dataset.sidebarGroup);
+          return;
+        }
         var button = event.target.closest('[data-nav]');
         if (button) self.nav(button.dataset.nav);
       };
@@ -255,17 +287,45 @@
       var host = document.getElementById('sidebarMenu');
       if (title) title.textContent = module.name;
       if (!host) return;
-      host.innerHTML = module.routes.filter(function (key) {
-        var viewPermission = modules.find(function (item) { return item.routes.indexOf(key) >= 0; })?.permission;
-        return !viewPermission || App.canAccess(viewPermission);
-      }).map(function (key) {
-        var meta = routeMeta[key] || [key, '', '·'];
-        return '<li><button class="menu-item" type="button" data-nav="' + key + '"><span class="menu-icon">' +
-          meta[2] + '</span><span class="menu-label">' + App.esc(meta[0]) + '</span></button></li>';
+      var groups = (module.groups || [{ key: module.key, name: module.name, icon: '·', routes: module.routes }]).map(function (group) {
+        var routes = group.routes.filter(function (key) {
+          var viewPermission = modules.find(function (item) { return item.routes.indexOf(key) >= 0; })?.permission;
+          return !viewPermission || App.canAccess(viewPermission);
+        });
+        return { group: group, routes: routes };
+      }).filter(function (item) { return item.routes.length > 0; });
+      var activeGroup = groups.find(function (item) { return item.routes.indexOf(App.activeView) >= 0; }) || groups[0];
+      if (App.sidebarExpanded[module.key] === undefined) App.sidebarExpanded[module.key] = activeGroup ? activeGroup.group.key : '';
+      host.innerHTML = groups.map(function (item) {
+        var group = item.group;
+        var routes = item.routes;
+        var groupActive = routes.indexOf(App.activeView) >= 0;
+        if (routes.length === 1) {
+          var single = routes[0];
+          var singleMeta = routeMeta[single] || [single, '', '·'];
+          return '<li><button class="menu-item" type="button" data-nav="' + single + '"><span class="menu-icon">' +
+            singleMeta[2] + '</span><span class="menu-label">' + App.esc(singleMeta[0]) + '</span></button></li>';
+        }
+        var expanded = App.sidebarExpanded[module.key] === group.key;
+        var submenuId = 'sidebar-sub-' + module.key + '-' + group.key;
+        var children = routes.map(function (key) {
+          var meta = routeMeta[key] || [key, '', '·'];
+          return '<li><button class="menu-item menu-subitem" type="button" data-nav="' + key + '"><span class="menu-icon">' +
+            meta[2] + '</span><span class="menu-label">' + App.esc(meta[0]) + '</span></button></li>';
+        }).join('');
+        return '<li class="menu-section"><button class="menu-item menu-group-toggle' + (groupActive ? ' has-active' : '') + '" type="button" data-sidebar-group="' + group.key + '" aria-expanded="' + (expanded ? 'true' : 'false') + '" aria-controls="' + submenuId + '"><span class="menu-icon">' +
+          App.esc(group.icon || '·') + '</span><span class="menu-label">' + App.esc(group.name) + '</span><span class="menu-caret" aria-hidden="true">⌄</span></button>' +
+          '<ul class="menu-sublist" id="' + submenuId + '"' + (expanded ? '' : ' hidden') + '>' + children + '</ul></li>';
       }).join('');
       host.querySelectorAll('[data-nav]').forEach(function (button) {
         button.classList.toggle('active', button.dataset.nav === App.activeView);
       });
+    },
+
+    toggleSidebarGroup: function (key) {
+      var current = this.sidebarExpanded[this.activeModule];
+      this.sidebarExpanded[this.activeModule] = current === key ? '' : key;
+      this.renderSidebar();
     },
 
     renderTabs: function () {
@@ -294,6 +354,8 @@
       }
       this.activeModule = module.key;
       this.activeView = key;
+      var activeGroup = (module.groups || []).find(function (group) { return group.routes.indexOf(key) >= 0; });
+      if (activeGroup) this.sidebarExpanded[module.key] = activeGroup.key;
       if (addTab !== false && this.openTabs.indexOf(key) < 0) this.openTabs.push(key);
       this.renderMainNav();
       this.renderSidebar();

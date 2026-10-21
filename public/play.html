@@ -34,6 +34,7 @@
             <!-- 播放器快捷操作面板 -->
             <div class="hl-player-setups hl-text-white hl-tran5" id="playerSetups">
               <div class="hl-setups-wrap">
+                <label style="display:inline-flex;align-items:center;gap:5px;margin:0 8px;color:#fff;font-size:.82rem;">倍速<select id="playbackSpeed" aria-label="播放倍速" style="padding:4px 6px;border-radius:4px;"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1">1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select></label><span id="trialCountdown" style="margin:0 8px;font-size:.82rem;"></span>
                 <a href="javascript:;" id="btnRefresh"><i class="iconfont hl-icon-shuaxin"></i><span>刷新</span></a>
                 <a href="javascript:;" id="btnPrev"><i class="iconfont hl-icon-shangyiji"></i><span>上一集</span></a>
                 <a href="javascript:;" id="btnNext"><i class="iconfont hl-icon-xiayiji"></i><span>下一集</span></a>
@@ -127,6 +128,14 @@ var vod = null;
 var playerCfg = {};
 var playerBackupCfg = {};
 var dp = null;
+var serverProgress = [];
+var lastProgressSync = 0;
+var activeTrialKey = '';
+var trialDeadline = 0;
+var trialTimer = 0;
+var trialFinished = false;
+var playerGeneration = 0;
+var fallbackInProgress = false;
 
 $(function () {
   Theme.init().then(function () {
@@ -152,9 +161,16 @@ function loadPlayers() {
 
 function loadVod() {
   if (!vodId) { location.href = '/'; return; }
-  API.get('/api/vod/detail/' + vodId).then(function (j) {
+  Promise.all([
+    API.get('/api/vod/detail/' + vodId),
+    API.get('/api/user/progress', { limit: 100 }).catch(function () { return { code: 401, data: [] }; })
+  ]).then(function (results) {
+    var j = results[0];
     if (j.code !== 0 || !j.data) { alert('影片不存在或已下架'); location.href = '/'; return; }
+    serverProgress = results[1].code === 0 ? (results[1].data || []) : [];
     vod = j.data;
+    var params=new URLSearchParams(location.search);
+    if(!params.has('sid')){var preferredLine=Number(localStorage.getItem('maccms_last_play_line_'+vodId));if(Number.isInteger(preferredLine)&&preferredLine>=0&&preferredLine<(vod.play_groups||[]).length)sid=preferredLine;}
     document.title = '正在播放：' + vod.vod_name + ' - MacCMS 影视';
     renderInfo();
     renderSources();
@@ -240,6 +256,10 @@ function bindGlobalEvents() {
   $('#btnPrev').on('click', playPrev);
   $('#btnRefresh').on('click', function () { playEpisode(); });
   $('#btnSetups').on('click', function () { $('#playerSetups').toggleClass('active'); });
+  var storedSpeed=Number(localStorage.getItem('maccms_playback_speed')||1);
+  if(![0.5,0.75,1,1.25,1.5,2].includes(storedSpeed))storedSpeed=1;
+  $('#playbackSpeed').val(String(storedSpeed));
+  $('#playbackSpeed').on('change',function(){var rate=Number($(this).val())||1;localStorage.setItem('maccms_playback_speed',String(rate));applyPlaybackSpeed(rate);});
   $('.hl-close-this').on('click', function () { $('#playerNotice').hide(); });
 
   $('#btnTheater').on('click', function () {
@@ -290,6 +310,9 @@ function bindGlobalEvents() {
 }
 
 function playEpisode() {
+  var trialKey=vodId+':'+nid;
+  if(trialKey!==activeTrialKey){if(trialTimer)clearInterval(trialTimer);trialTimer=0;activeTrialKey=trialKey;trialDeadline=0;trialFinished=false;$('#trialCountdown').text('');}
+  localStorage.setItem('maccms_last_play_line_'+vodId,String(sid));
   var group = (vod.play_groups || [])[sid];
   if (!group || !group.urls[nid]) return;
   var ep = group.urls[nid];
@@ -315,18 +338,42 @@ function playEpisode() {
       return;
     }
 
-    startPlay(ep, from, parse, parse2);
+    var resolveEpisode = function (password) {
+      return API.post('/api/vod/resolve', { vod_id: vodId, sid: sid, nid: nid, mode: 'play', password: password || '' });
+    };
+    resolveEpisode('').then(function (resolved) {
+      if (resolved.code !== 0 && resolved.data && resolved.data.password_required) {
+        var password = window.prompt('请输入播放密码');
+        if (password === null) return;
+        return resolveEpisode(password).then(function (retry) {
+          if (retry.code !== 0 || !retry.data || !retry.data.url) { alert(retry.msg || '播放权限验证失败'); return; }
+          startPlay(Object.assign({}, ep, { url: retry.data.url }), from, parse, parse2, retry.data.trial_seconds || 0);
+        });
+      }
+      if (resolved.code !== 0 || !resolved.data || !resolved.data.url) { alert(resolved.msg || '无法取得播放地址'); return; }
+      startPlay(Object.assign({}, ep, { url: resolved.data.url }), from, parse, parse2, resolved.data.trial_seconds || 0);
+    });
   });
 }
 
-function startPlay(ep, from, parse, parse2) {
+function startPlay(ep, from, parse, parse2, trialSeconds, fallbackTried) {
   var saved = Interact.history.progress(vodId, sid, nid);
+  var remote = serverProgress.find(function (item) { return Number(item.vod_id) === vodId && Number(item.play_sid) === sid && Number(item.play_nid) === nid; });
+  if (remote && Number(remote.position_seconds) > saved) saved = Number(remote.position_seconds);
+  lastProgressSync = 0;
   destroyPlayer();
+  var triedLines=fallbackTried||new Set([sid]);
+  triedLines.add(sid);fallbackInProgress=false;
+  var generation=playerGeneration;
 
   var isHls = ep.url.indexOf('.m3u8') >= 0 || from.indexOf('m3u8') >= 0 || from === 'dplayer';
   var isMp4 = ep.url.indexOf('.mp4') >= 0;
 
   if ((parse && !isHls && !isMp4) || from === 'iframe') {
+    if (trialSeconds > 0) {
+      $('#dplayer').html('<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#111;color:#fff;text-align:center;padding:24px">此线路使用外部播放器，暂不支持试看计时，请切换内置播放线路或登录后观看。</div>');
+      return;
+    }
     var iframeSrc = parse ? parse + encodeURIComponent(ep.url) : ep.url;
     $('#dplayer').html(
       '<iframe id="playIframe" src="' + iframeSrc + '" width="100%" height="100%" frameborder="0" allowfullscreen="true" webkitallowfullscreen="true" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation" style="border:none;background:#000;"></iframe>'
@@ -335,7 +382,13 @@ function startPlay(ep, from, parse, parse2) {
   }
 
   if (typeof DPlayer === 'undefined') {
-    $('#dplayer').html('<video src="' + ep.url + '" controls autoplay style="width:100%;height:100%;background:#000;"></video>');
+    $('#dplayer').html('<video id="fallbackVideo" src="' + ep.url + '" controls autoplay style="width:100%;height:100%;background:#000;"></video>');
+    applyPlaybackSpeed(Number(localStorage.getItem('maccms_playback_speed')||1));
+    var fallbackVideo=document.getElementById('fallbackVideo');
+    fallbackVideo.addEventListener('error',function(){if(playerGeneration===generation&&!trialFinished)tryNextPlaybackLine(ep,parse2,trialSeconds,triedLines,generation);});
+    if (trialSeconds > 0) {
+      startTrialEnforcement(trialSeconds);
+    }
     return;
   }
 
@@ -353,28 +406,85 @@ function startPlay(ep, from, parse, parse2) {
       type: isHls ? 'hls' : 'auto'
     }
   });
+  applyPlaybackSpeed(Number(localStorage.getItem('maccms_playback_speed')||1));
 
-  if (saved > 5) {
+  if (trialSeconds > 0) {
+    startTrialEnforcement(trialSeconds);
+  }
+
+  if (saved > 5 && trialSeconds <= 0) {
     setTimeout(function () {
       try { dp.seek(saved); } catch (e) {}
     }, 1200);
   }
 
   dp.on('timeupdate', function () {
+    var position = Math.floor(dp.video.currentTime);
+    var duration = Math.floor(dp.video.duration || 0);
     Interact.history.save({
       vod_id: vodId, vod_name: vod.vod_name, vod_pic: vod.vod_pic,
-      sid: sid, nid: nid, ep_name: ep.name,
-      time: Math.floor(dp.video.currentTime), duration: Math.floor(dp.video.duration || 0)
+      sid: sid, nid: nid, ep_name: ep.name, time: position, duration: duration
     });
+    var now = Date.now();
+    if (now - lastProgressSync >= 15000 || (duration > 0 && position >= duration - 10)) {
+      lastProgressSync = now;
+      API.post('/api/user/progress', { vod_id: vodId, sid: sid, nid: nid, episode_name: ep.name, position_seconds: position, duration_seconds: duration });
+    }
   });
 
   // 同步服务端历史记录
   API.post('/api/user/history', { mid: 1, rid: vodId, sid: sid, nid: nid });
 
   dp.on('ended', function () { playNext(); });
+  dp.on('error', function () {
+    if(playerGeneration!==generation||trialFinished)return;
+    tryNextPlaybackLine(ep,parse2,trialSeconds,triedLines,generation);
+  });
+}
+
+function applyPlaybackSpeed(rate){
+  rate=Number(rate)||1;
+  var video=dp&&dp.video?dp.video:document.getElementById('fallbackVideo');
+  if(video){try{video.playbackRate=rate;video.defaultPlaybackRate=rate;}catch(e){}}
+}
+
+function startTrialEnforcement(seconds){
+  var storageKey='maccms_trial_until_'+activeTrialKey;
+  if(!trialDeadline){var saved=Number(sessionStorage.getItem(storageKey)||0);trialDeadline=saved>0?saved:Date.now()+Math.max(1,Number(seconds)||1)*1000;sessionStorage.setItem(storageKey,String(trialDeadline));}
+  if(trialTimer)clearInterval(trialTimer);
+  var check=function(){var remain=Math.ceil((trialDeadline-Date.now())/1000);if(remain<=0){expireTrial();return;}$('#trialCountdown').text('试看剩余 '+Math.floor(remain/60)+':'+String(remain%60).padStart(2,'0'));};
+  trialTimer=setInterval(check,250);check();
+}
+
+function expireTrial(){
+  trialFinished=true;if(trialTimer)clearInterval(trialTimer);trialTimer=0;$('#trialCountdown').text('试看结束');
+  try{if(dp)dp.pause();var fallback=document.getElementById('fallbackVideo');if(fallback)fallback.pause();}catch(e){}
+  if(!document.getElementById('trialExpiredOverlay'))$('#dplayer').append('<div id="trialExpiredOverlay" style="position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.9);color:#fff;text-align:center;padding:24px"><strong>试看时间已结束</strong><a href="/user.html" style="margin-top:12px;padding:9px 22px;background:var(--hl-site,#09f);color:#fff;border-radius:20px;text-decoration:none">登录后继续观看</a></div>');
+}
+
+function tryNextPlaybackLine(ep,parse2,trialSeconds,tried,generation){
+  if(fallbackInProgress)return;
+  var groups=vod&&vod.play_groups||[];
+  for(var nextSid=0;nextSid<groups.length;nextSid++){
+    if(tried.has(nextSid)||!groups[nextSid].urls||!groups[nextSid].urls[nid])continue;
+    tried.add(nextSid);fallbackInProgress=true;var nextNid=nid,group=groups[nextSid],from=(group.urls[nextNid].from||group.from||'dplayer').toLowerCase();
+    var parse=playerCfg[from]||'',nextParse2=playerBackupCfg[from]||'';
+    API.post('/api/vod/resolve',{vod_id:vodId,sid:nextSid,nid:nextNid,mode:'play'}).then(function(result){
+      if(playerGeneration!==generation)return;
+      if(result.code!==0||!result.data||!result.data.url){fallbackInProgress=false;tryNextPlaybackLine(ep,parse2,trialSeconds,tried,generation);return;}
+      sid=nextSid;nid=nextNid;localStorage.setItem('maccms_last_play_line_'+vodId,String(sid));history.replaceState(null,'','/play.html?id='+vodId+'&sid='+sid+'&nid='+nid);renderSources();
+      var selected=groups[nextSid].urls[nextNid];startPlay(Object.assign({},selected,{url:result.data.url}),from,parse,nextParse2,Math.max(Number(trialSeconds)||0,Number(result.data.trial_seconds)||0),tried);
+    }).catch(function(){fallbackInProgress=false;if(playerGeneration===generation)tryNextPlaybackLine(ep,parse2,trialSeconds,tried,generation);});
+    return;
+  }
+  if(parse2&&trialSeconds<=0&&!tried.has('parser2')){
+    tried.add('parser2');var parserUrl=parse2+encodeURIComponent(ep.url);
+    startPlay(Object.assign({},ep,{url:parserUrl}), 'iframe', '', '', 0, tried);
+  }
 }
 
 function destroyPlayer() {
+  playerGeneration++;
   if (dp) { try { dp.destroy(); } catch (e) {} dp = null; }
   $('#dplayer').html('');
 }

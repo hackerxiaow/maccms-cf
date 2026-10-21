@@ -66,7 +66,7 @@ export class ActorService {
       SELECT a.*, t.type_name
       FROM actor a
       LEFT JOIN type t ON a.type_id = t.type_id
-      WHERE a.actor_id = ?
+      WHERE a.actor_id = ? AND a.actor_status = 1
       LIMIT 1
     `).bind(id).first<ActorItem>();
 
@@ -75,7 +75,7 @@ export class ActorService {
     db.prepare('UPDATE actor SET actor_hits = actor_hits + 1 WHERE actor_id = ?').bind(id).run().catch(() => {});
 
     // 查该明星饰演的角色
-    const roleRows = await db.prepare('SELECT * FROM role WHERE role_actor_id = ? OR role_actor_name = ? LIMIT 10')
+    const roleRows = await db.prepare('SELECT * FROM role WHERE role_status = 1 AND (role_actor_id = ? OR role_actor_name = ?) LIMIT 10')
       .bind(id, row.actor_name).all<RoleItem>();
 
     // 查该明星主演的影片
@@ -191,7 +191,7 @@ export class ActorService {
 
   static async queryRoles(
     db: D1Database,
-    opts: { page?: number; limit?: number; vodId?: number; actorId?: number; wd?: string; includeHidden?: boolean } = {}
+    opts: { page?: number; limit?: number; vodId?: number; actorId?: number; typeId?: number; letter?: string; area?: string; wd?: string; includeHidden?: boolean } = {}
   ): Promise<{ list: RoleItem[]; total: number; page: number; limit: number; pagecount: number }> {
     const page = Math.max(1, opts.page || 1);
     const limit = Math.min(50, Math.max(1, opts.limit || 20));
@@ -207,6 +207,19 @@ export class ActorService {
     if (opts.actorId && opts.actorId > 0) {
       conditions.push('r.role_actor_id = ?');
       params.push(opts.actorId);
+    }
+    if (opts.typeId && opts.typeId > 0) {
+      conditions.push('EXISTS (SELECT 1 FROM vod v WHERE v.vod_id = r.role_vod_id AND (v.type_id = ? OR v.type_id_1 = ?))');
+      params.push(opts.typeId, opts.typeId);
+    }
+    if (opts.letter && opts.letter.trim()) {
+      conditions.push('r.role_letter = ?');
+      params.push(opts.letter.trim().toUpperCase());
+    }
+    if (opts.area && opts.area.trim()) {
+      conditions.push(`(EXISTS (SELECT 1 FROM actor a WHERE a.actor_id = r.role_actor_id AND a.actor_area LIKE ?)
+        OR EXISTS (SELECT 1 FROM vod v WHERE v.vod_id = r.role_vod_id AND v.vod_area LIKE ?))`);
+      params.push(`%${opts.area.trim()}%`, `%${opts.area.trim()}%`);
     }
     if (opts.wd && opts.wd.trim()) {
       conditions.push('(r.role_name LIKE ? OR r.role_actor_name LIKE ? OR r.role_vod_name LIKE ?)');
@@ -227,6 +240,30 @@ export class ActorService {
     `).bind(...params, limit, offset).all<RoleItem>();
 
     return { list: rows.results || [], total, page, limit, pagecount };
+  }
+
+  /** 获取公开角色详情，并附带关联明星和影视信息。 */
+  static async getRoleDetail(
+    db: D1Database,
+    id: number
+  ): Promise<(RoleItem & { actor: Partial<ActorItem> | null; vod: Partial<VodItem> | null }) | null> {
+    const role = await db.prepare('SELECT * FROM role WHERE role_id = ? AND role_status = 1 LIMIT 1')
+      .bind(id).first<RoleItem>();
+    if (!role) return null;
+
+    const [actor, vod] = await Promise.all([
+      role.role_actor_id > 0
+        ? db.prepare(`SELECT actor_id, actor_name, actor_en, actor_pic, actor_area, actor_works
+            FROM actor WHERE actor_id = ? AND actor_status = 1 LIMIT 1`).bind(role.role_actor_id).first<Partial<ActorItem>>()
+        : Promise.resolve(null),
+      role.role_vod_id > 0
+        ? db.prepare(`SELECT vod_id, vod_name, vod_pic, vod_year, vod_remarks, vod_score
+            FROM vod WHERE vod_id = ? AND vod_status = 1 LIMIT 1`).bind(role.role_vod_id).first<Partial<VodItem>>()
+        : Promise.resolve(null),
+    ]);
+
+    db.prepare('UPDATE role SET role_hits = role_hits + 1 WHERE role_id = ?').bind(id).run().catch(() => {});
+    return { ...role, actor: actor || null, vod: vod || null };
   }
 
   static async saveRole(db: D1Database, data: Partial<RoleItem>): Promise<number> {

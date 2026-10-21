@@ -37,7 +37,11 @@
 
 新增 D1 数据表通过 `migrations/` 下的顺序迁移文件维护。开发环境运行 `npm run d1:migrate`；部署数据库更新后运行 `npm run d1:migrate-remote`。漫画、云端运营模块和商城结账分别由后续迁移补齐；Worker 与 Pages 必须对同一个 D1 实例按顺序执行迁移。
 
+部署前建议设置独立的令牌签名密钥：`wrangler secret put JWT_SECRET`。本地开发未配置时会为会员令牌生成随机 D1 密钥；配置 `JWT_SECRET` 后，修改该密钥会使既有登录令牌失效。
+
 后台扩展按 Cloudflare 能力实现：Cron 采集和手动采集共用运行日志；内容访问统计只记录成功的详情页访问，并按日哈希访客 IP；`/sitemap.xml` 生成当前前台真实存在的详情地址。数据库页提供白名单业务表 JSON 导出和分批还原；内容删除先进 D1 回收站；后台角色权限在 API 层校验；R2 图片库需要绑定媒体桶。商城支持领券、下单抵扣、秒杀活动、待核款、管理员确认、履约完成与取消；取消时 D1 触发器会退回商品/活动库存和积分、释放优惠券并记入积分流水。连续签到达到后台配置的里程碑后会自动发放一次奖励。定时任务由固定的 Workers Cron 每 5 分钟检查一次 D1 任务计划。
+
+会员扩展还包括 SMTP 邮箱验证与密码找回、在线支付签名回调和后台对账、Meilisearch 可选索引、Web Push 通知中心、会员动态审核、钱包提现申请/审核及内容资源巡检。邮箱使用 Cloudflare Workers TCP Sockets 上的 [`worker-mailer`](https://github.com/zou-yu/worker-mailer)；首次配置可在系统设置发送测试邮件。在线支付采用项目托管收银台协议，需要支付服务端适配回调签名；提现到账由管理员线下打款。字段、回调和配置步骤见 [Cloudflare 外部服务配置](docs/cloudflare-integrations.md)。
 
 同一套 Hono Worker 入口也提供 Cloudflare Pages Functions 适配器：`functions/[[path]].ts` 将 Pages 请求交给 Worker，静态文件经 Pages `ASSETS` 绑定返回。Workers 运行方式使用 `wrangler.toml`；Pages 方式使用独立的 `wrangler.pages.toml`，两边共享 `src/` 与 `migrations/`。
 
@@ -161,8 +165,9 @@ npm install
 利用 `wrangler` 在本地 SQLite 环境中执行建表与初始数据预设：
 ```bash
 npx wrangler d1 execute maccms-db --local --file=./schema.sql
+npm run d1:migrate
 ```
-> 若已有旧库需要升级，执行 `npm run d1:migrate`；线上执行 `npm run d1:migrate-remote`。迁移按文件名顺序补齐漫画、直播、日志与推送表。
+已有数据库升级时只需按顺序执行迁移：本地运行 `npm run d1:migrate`，线上运行 `npm run d1:migrate-remote`。迁移按文件名顺序补齐漫画、直播、日志与会员扩展表。
 
 Pages 本地开发可运行 `npm run pages:dev`。Pages 部署前把 `wrangler.pages.toml` 中的 `database_id` 换成真实 D1 ID，并创建 R2 桶 `maccms-media`；再执行 `npm run d1:pages:migrate` 和 `npm run pages:deploy`。Worker 部署使用 `npm run d1:migrate-remote` 与 `npm run deploy`。两个配置文件分别维护资源绑定，数据库 ID 和站点变量需要保持一致。
 

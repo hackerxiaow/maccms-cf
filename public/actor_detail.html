@@ -30,6 +30,11 @@
       <ul class="hl-one-list clearfix" id="actorVodsList" style="margin-top:14px;"></ul>
       <div id="actorVodsEmpty" class="hl-empty" style="display:none;padding:40px 0;">暂无关联的参演影视作品</div>
     </div>
+
+    <div class="hl-row-box clearfix" id="actorRolesBox" style="display:none;margin-top:20px;">
+      <div class="hl-rb-head clearfix"><h3 class="hl-rb-title" style="font-size:1.2rem;font-weight:800;">饰演角色</h3></div>
+      <ul class="hl-one-list clearfix" id="actorRolesList" style="margin-top:14px;"></ul>
+    </div>
   </div>
 </div>
 
@@ -87,13 +92,22 @@ function loadActorDetail() {
     vList.html('');
     if (!vods.length) {
       $('#actorVodsEmpty').show();
-      return;
+    } else {
+      $('#actorVodsEmpty').hide();
+      vods.forEach(function (v) {
+        vList.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
+      });
+      Interact.lazy(vList[0]);
     }
-    $('#actorVodsEmpty').hide();
-    vods.forEach(function (v) {
-      vList.append('<li class="hl-list-item hl-col-xs-4 hl-col-sm-3 hl-col-md-20w hl-col-lg-2">' + Card.item(v) + '</li>');
-    });
-    Interact.lazy(vList[0]);
+
+    var roles = a.roles || [];
+    if (roles.length) {
+      $('#actorRolesBox').show();
+      $('#actorRolesList').html(roles.map(function (role) {
+        return '<li class="hl-list-item hl-col-xs-6 hl-col-sm-4 hl-col-md-3" style="margin-bottom:12px;"><a href="/role.html?id=' + role.role_id + '" style="display:block;color:inherit;">' +
+          '<strong>' + U.esc(role.role_name || '未命名角色') + '</strong><div class="hl-text-muted">' + U.esc(role.role_vod_name || '') + '</div></a></li>';
+      }).join(''));
+    }
   });
 }
 </script>

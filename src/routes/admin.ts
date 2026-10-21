@@ -16,6 +16,8 @@ import { GbookService } from '../services/gbook.ts';
 import { AdsService } from '../services/ads.ts';
 import { WebsiteService } from '../services/website.ts';
 import { MangaService } from '../services/manga.ts';
+import { PaymentService } from '../services/payment.ts';
+import { MemberSecurityService } from '../services/member-security.ts';
 import { cloudAdminRouter } from './cloud-admin.ts';
 
 export const adminRouter = new Hono<{ Bindings: Bindings }>();
@@ -31,9 +33,11 @@ const BACKUP_TABLES = [
   'theme_config', 'cj_history', 'live_category', 'live_channel', 'collect_run_log', 'user_login_log',
   'admin_role', 'admin_account', 'user_follow', 'danmaku', 'chatroom_message', 'user_pm', 'share_log',
   'cash_log', 'coupon', 'user_coupon', 'mall_goods', 'mall_order', 'site_notice', 'sign_log', 'vod_play_fail',
-  'content_check_rule', 'content_check_issue', 'scheduled_task', 'scheduled_task_log', 'media_asset', 'user_access_rule', 'recycle_bin',
+  'content_check_rule', 'content_check_issue', 'scheduled_task', 'scheduled_task_log', 'media_asset', 'media_sync_scan', 'media_sync_item', 'telegram_storage_account', 'telegram_storage_state', 'user_invite_code', 'user_invite_reward', 'user_access_rule', 'recycle_bin',
   'sign_milestone', 'user_sign_milestone',
   'seckill_campaign',
+  'user_notification', 'web_push_subscription', 'payment_intent', 'payment_event', 'user_post', 'user_post_like', 'cash_withdrawal', 'user_wallet',
+  'search_query_log', 'resource_check_item', 'content_translation',
 ] as const;
 type BackupTable = typeof BACKUP_TABLES[number];
 const isBackupTable = (value: string): value is BackupTable =>
@@ -158,7 +162,7 @@ adminRouter.use('*', async (c, next) => {
       ? 'users'
       : path.startsWith('/cloud/recycle')
         ? 'content'
-        : path.startsWith('/cloud/cash') || path.startsWith('/cloud/orders') || path.startsWith('/cloud/seckill')
+        : path.startsWith('/cloud/cash') || path.startsWith('/cloud/orders') || path.startsWith('/cloud/seckill') || path.startsWith('/cloud/notifications') || path.startsWith('/cloud/withdrawals') || path.startsWith('/cloud/posts')
           ? 'ops'
     : path.startsWith('/cloud/transfer')
       ? 'content'
@@ -194,6 +198,15 @@ adminRouter.use('*', async (c, next) => {
     } catch (err) {
       console.error('Failed to write admin audit log:', err);
     }
+  }
+});
+
+adminRouter.post('/payment/reconcile/:orderCode', async (c) => {
+  try {
+    const result = await PaymentService.reconcile(c.env, c.req.param('orderCode'), new URL(c.req.url).origin);
+    return c.json({ code: 0, msg: `查询完成：${result.status}`, data: result });
+  } catch (error) {
+    return c.json({ code: 400, msg: error instanceof Error ? error.message : '支付对账失败' }, 400);
   }
 });
 
@@ -1347,18 +1360,149 @@ adminRouter.post('/theme/reset', async (c) => {
 adminRouter.get('/config', async (c) => {
   const configs = await VodService.getConfigs(c.env.DB);
   delete configs.admin_pwd;
+  delete configs.user_token_secret;
+  configs.mail_smtp_password_set = configs.mail_smtp_password ? '1' : '0';
+  configs.payment_secret_set = configs.payment_secret ? '1' : '0';
+  configs.meilisearch_api_key_set = configs.meilisearch_api_key ? '1' : '0';
+  configs.push_vapid_private_key_set = configs.push_vapid_private_key ? '1' : '0';
+  configs.ai_api_key_set = configs.ai_api_key ? '1' : '0';
+  delete configs.mail_smtp_password;
+  delete configs.payment_secret;
+  delete configs.meilisearch_api_key;
+  delete configs.push_vapid_private_key;
+  delete configs.ai_api_key;
+  configs.telegraph_password_set = configs.telegraph_password ? '1' : '0';
+  configs.telegram_bot_token_set = configs.telegram_bot_token ? '1' : '0';
+  delete configs.telegraph_password;
+  delete configs.telegram_bot_token;
   return c.json({ code: 0, data: configs });
+});
+
+adminRouter.post('/config/mail/test', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    await MemberSecurityService.sendTestEmail(c.env, String(body.email || ''));
+    return c.json({ code: 0, msg: '测试邮件已发送，请检查收件箱和垃圾邮件' });
+  } catch (error) {
+    return c.json({ code: 400, msg: error instanceof Error ? error.message : '测试邮件发送失败' }, 400);
+  }
 });
 
 adminRouter.post('/config', async (c) => {
   const body = await c.req.json();
   const db = c.env.DB;
+  const saved = await VodService.getConfigs(db);
+  if (body.user_invite_status !== undefined && !['0', '1'].includes(String(body.user_invite_status))) {
+    return c.json({ code: 400, msg: '邀请奖励开关值无效' }, 400);
+  }
+  for (const key of ['user_email_required', 'user_email_verification', 'user_post_audit']) {
+    if (body[key] !== undefined && !['0', '1'].includes(String(body[key]))) return c.json({ code: 400, msg: `${key} 必须为 0 或 1` }, 400);
+  }
+  for (const [key, label] of Object.entries({ payment_checkout_url: '支付收银台地址', payment_query_url: '支付查询接口地址', meilisearch_url: 'Meilisearch 地址' })) {
+    if (body[key] === undefined || !String(body[key]).trim()) continue;
+    let endpoint: URL;
+    try { endpoint = new URL(String(body[key]).trim()); } catch { return c.json({ code: 400, msg: `${label}格式无效` }, 400); }
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password) return c.json({ code: 400, msg: `${label}必须使用 HTTPS，且不能包含账号密码` }, 400);
+  }
+  if (body.ai_base_url !== undefined && String(body.ai_base_url).trim()) {
+    let endpoint: URL;
+    try { endpoint = new URL(String(body.ai_base_url).trim()); } catch { return c.json({ code: 400, msg: 'AI 兼容接口地址格式无效' }, 400); }
+    const local = endpoint.hostname === 'localhost' || endpoint.hostname === '127.0.0.1';
+    if ((!local && endpoint.protocol !== 'https:') || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+      return c.json({ code: 400, msg: 'AI 接口须使用 HTTPS，且不能包含账号、查询参数或片段' }, 400);
+    }
+  }
+  if (body.ai_model !== undefined && String(body.ai_model).trim().length > 120) return c.json({ code: 400, msg: 'AI 模型名称不能超过 120 个字符' }, 400);
+  if (body.payment_products !== undefined) {
+    let products: any;
+    try { products = JSON.parse(String(body.payment_products)); } catch { return c.json({ code: 400, msg: '支付套餐须为有效 JSON' }, 400); }
+    if (!Array.isArray(products) || products.length > 100) return c.json({ code: 400, msg: '支付套餐须为不超过 100 项的 JSON 数组' }, 400);
+    const codes = new Set<string>();
+    for (const product of products) {
+      const code = String(product?.code || '').trim();
+      const type = String(product?.type || '');
+      const amount = Number(product?.amount_cents);
+      if (!/^[A-Za-z0-9_-]{1,48}$/.test(code) || codes.has(code) || !String(product?.name || '').trim()
+        || !['points', 'vip'].includes(type) || !Number.isInteger(amount) || amount < 1 || amount > 100000000
+        || (type === 'points' && (!Number.isInteger(Number(product?.points)) || Number(product.points) < 1))
+        || (type === 'vip' && (!Number.isInteger(Number(product?.vip_days)) || Number(product.vip_days) < 1))) {
+        return c.json({ code: 400, msg: '支付套餐字段无效：请检查 code、name、type、amount_cents、points/vip_days' }, 400);
+      }
+      codes.add(code);
+    }
+  }
+  if (body.mail_smtp_port !== undefined) {
+    const port = Number(body.mail_smtp_port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return c.json({ code: 400, msg: 'SMTP 端口须为 1-65535 的整数' }, 400);
+  }
+  if (body.mail_smtp_auth_type !== undefined && !['plain', 'login', 'cram-md5'].includes(String(body.mail_smtp_auth_type))) {
+    return c.json({ code: 400, msg: 'SMTP 认证方式无效' }, 400);
+  }
+  if (body.push_vapid_subject !== undefined) {
+    const subject = String(body.push_vapid_subject).trim();
+    if (!(subject.startsWith('mailto:') || subject.startsWith('https://'))) return c.json({ code: 400, msg: 'VAPID 联系方式须为 mailto: 邮箱或 HTTPS 地址' }, 400);
+  }
+  for (const key of ['mail_smtp_secure', 'mail_smtp_starttls']) {
+    if (body[key] !== undefined && !['0', '1'].includes(String(body[key]))) return c.json({ code: 400, msg: `${key} 必须为 0 或 1` }, 400);
+  }
+  const emailRequired = String(body.user_email_required ?? saved.user_email_required ?? '0') === '1';
+  const smtpHost = String(body.mail_smtp_host ?? saved.mail_smtp_host ?? '').trim();
+  const smtpFrom = String(body.mail_from ?? saved.mail_from ?? '').trim();
+  if (emailRequired && (!smtpHost || !smtpFrom)) return c.json({ code: 400, msg: '强制邮箱验证前，请先配置 SMTP 主机和发件人地址' }, 400);
+  if (body.mail_smtp_host !== undefined && (smtpHost.length > 253 || /[\s/\\@]/.test(smtpHost))) {
+    return c.json({ code: 400, msg: 'SMTP 主机格式无效' }, 400);
+  }
+  for (const key of ['user_invite_points', 'user_invited_points']) {
+    if (body[key] !== undefined) {
+      const points = Number(body[key]);
+      if (!Number.isInteger(points) || points < 0 || points > 100000) return c.json({ code: 400, msg: '邀请奖励积分须为 0–100000 的整数' }, 400);
+    }
+  }
+  if (body.media_storage_provider !== undefined && !['r2', 'telegraph', 'telegram'].includes(String(body.media_storage_provider))) {
+    return c.json({ code: 400, msg: '图片存储后端只能选择 R2、TG Bot 或 Telegraph 服务' }, 400);
+  }
+  if (body.telegraph_base_url !== undefined && String(body.telegraph_base_url).trim()) {
+    let endpoint: URL;
+    try { endpoint = new URL(String(body.telegraph_base_url).trim()); } catch { return c.json({ code: 400, msg: 'Telegraph 服务地址格式无效' }, 400); }
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+      return c.json({ code: 400, msg: 'Telegraph 服务地址必须是 HTTPS，且不能包含账号、查询参数或片段' }, 400);
+    }
+  }
+  if (body.telegram_api_base !== undefined && String(body.telegram_api_base).trim()) {
+    let endpoint: URL;
+    try { endpoint = new URL(String(body.telegram_api_base).trim()); } catch { return c.json({ code: 400, msg: 'Telegram Bot API 地址格式无效' }, 400); }
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+      return c.json({ code: 400, msg: 'Telegram Bot API 地址必须是 HTTPS，且不能包含账号、查询参数或片段' }, 400);
+    }
+  }
+  const settingProvider = body.media_storage_provider === undefined
+    ? (await VodService.getConfigs(db)).media_storage_provider || 'r2'
+    : String(body.media_storage_provider);
+  if (settingProvider === 'telegraph') {
+    const existing = await VodService.getConfigs(db);
+    const url = String(body.telegraph_base_url ?? existing.telegraph_base_url ?? '').trim();
+    const username = String(body.telegraph_username ?? existing.telegraph_username ?? '').trim();
+    const password = String(body.telegraph_password ?? existing.telegraph_password ?? '');
+    if (!url || !username || !password) return c.json({ code: 400, msg: '启用 Telegraph 前请填写服务地址、USERNAME 和 PASSWORD' }, 400);
+  } else if (settingProvider === 'telegram') {
+    const existing = await VodService.getConfigs(db);
+    const token = String(body.telegram_bot_token ?? existing.telegram_bot_token ?? '').trim();
+    const chatId = String(body.telegram_chat_id ?? existing.telegram_chat_id ?? '').trim();
+    const pool = await db.prepare('SELECT COUNT(*) AS c FROM telegram_storage_account WHERE enabled=1 AND bot_token<>\'\' AND chat_id<>\'\'').first<{ c: number }>();
+    if (!(pool?.c || 0) && (!token || !chatId)) return c.json({ code: 400, msg: '启用 TG Bot 前请在媒体库账户池至少添加一个账户' }, 400);
+  }
 
   for (const [key, val] of Object.entries(body)) {
     if ((key === 'new_password' || key === 'admin_pwd') && typeof val === 'string' && val.trim()) {
       const hash = await AuthUtils.sha256(val.trim());
       await VodService.setConfig(db, 'admin_pwd', hash);
-    } else if (key !== 'new_password' && key !== 'admin_pwd') {
+    } else if (key === 'telegraph_password' && typeof val === 'string' && val.trim()) {
+      await VodService.setConfig(db, key, val);
+    } else if (key === 'telegram_bot_token' && typeof val === 'string' && val.trim()) {
+      await VodService.setConfig(db, key, val);
+    } else if (['mail_smtp_password', 'payment_secret', 'meilisearch_api_key', 'push_vapid_private_key', 'ai_api_key'].includes(key) && typeof val === 'string' && val.trim()) {
+      await VodService.setConfig(db, key, val.trim());
+    } else if (key !== 'new_password' && key !== 'admin_pwd' && key !== 'user_token_secret' && key !== 'telegraph_password' && key !== 'telegram_bot_token') {
       await VodService.setConfig(db, key, String(val));
     }
   }

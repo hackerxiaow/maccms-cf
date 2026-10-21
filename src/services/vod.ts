@@ -42,6 +42,7 @@ export interface VodQueryOptions {
   actor?: string;     // 主演精确匹配
   director?: string;  // 导演精确匹配
   weekday?: number;   // 星期筛选 (0=周日 1=周一 ... 6=周六)
+  plotOnly?: boolean;  // 只查询已启用分集剧情的视频
 }
 
 export class VodService {
@@ -81,6 +82,10 @@ export class VodService {
       const placeholders = opts.ids.map(() => '?').join(',');
       conditions.push(`v.vod_id IN (${placeholders})`);
       params.push(...opts.ids);
+    }
+
+    if (opts.plotOnly) {
+      conditions.push('COALESCE(v.vod_plot, 0) > 0');
     }
 
     if (opts.typeId && opts.typeId > 0) {
@@ -142,8 +147,13 @@ export class VodService {
 
     if (opts.wd && opts.wd.trim()) {
       const kw = `%${opts.wd.trim()}%`;
-      conditions.push('(v.vod_name LIKE ? OR v.vod_sub LIKE ? OR v.vod_actor LIKE ? OR v.vod_director LIKE ?)');
-      params.push(kw, kw, kw, kw);
+      if (opts.plotOnly) {
+        conditions.push('(v.vod_name LIKE ? OR v.vod_sub LIKE ? OR v.vod_actor LIKE ? OR v.vod_director LIKE ? OR v.vod_plot_name LIKE ? OR v.vod_plot_detail LIKE ?)');
+        params.push(kw, kw, kw, kw, kw, kw);
+      } else {
+        conditions.push('(v.vod_name LIKE ? OR v.vod_sub LIKE ? OR v.vod_actor LIKE ? OR v.vod_director LIKE ?)');
+        params.push(kw, kw, kw, kw);
+      }
     }
 
     if (opts.isEnd !== undefined && opts.isEnd >= 0) {
@@ -205,14 +215,16 @@ export class VodService {
    */
   static async getVodDetail(
     db: D1Database,
-    vodId: number
+    vodId: number,
+    options: { publishedOnly?: boolean; countHit?: boolean } = {}
   ): Promise<(VodItem & { play_groups: PlayGroup[]; down_groups: PlayGroup[] }) | null> {
+    const statusCondition = options.publishedOnly ? ' AND v.vod_status = 1' : '';
     const row = await db
       .prepare(`
         SELECT v.*, t.type_name
         FROM vod v
         LEFT JOIN type t ON v.type_id = t.type_id
-        WHERE v.vod_id = ?
+        WHERE v.vod_id = ?${statusCondition}
         LIMIT 1
       `)
       .bind(vodId)
@@ -220,6 +232,7 @@ export class VodService {
 
     if (!row) return null;
 
+    if (options.countHit) {
     // 自增并更新日/周/月点击量
     const now = Math.floor(Date.now() / 1000);
     const lastHitsTime = row.vod_time_hits || 0;
@@ -237,6 +250,7 @@ export class VodService {
         vod_time_hits = ?
       WHERE vod_id = ?
     `).bind(hitsDay, hitsWeek, hitsMonth, now, vodId).run().catch(() => {});
+    }
 
     const play_groups = MacPlayUrlParser.parse(
       row.vod_play_from,
@@ -257,6 +271,42 @@ export class VodService {
       play_groups,
       down_groups,
     };
+  }
+
+  /**
+   * 获取 MacCMS 分集剧情详情。剧情名与正文按 $$$ 一一对应，页码从 1 开始。
+   */
+  static async getPlotDetail(
+    db: D1Database,
+    vodId: number,
+    page = 1
+  ): Promise<({ vod_id: number; vod_name: string; vod_pic: string; vod_year: string; vod_area: string; type_name?: string; vod_plot_name: string; vod_plot_detail: string } & {
+    plot_list: Array<{ page: number; name: string; detail: string }>;
+    current_plot: { page: number; name: string; detail: string };
+    pagecount: number;
+  }) | null> {
+    const row = await db.prepare(`
+      SELECT v.vod_id, v.vod_name, v.vod_pic, v.vod_year, v.vod_area,
+        v.vod_plot, v.vod_plot_name, v.vod_plot_detail, t.type_name
+      FROM vod v LEFT JOIN type t ON v.type_id = t.type_id
+      WHERE v.vod_id = ? AND v.vod_status = 1 AND COALESCE(v.vod_plot, 0) > 0
+      LIMIT 1
+    `).bind(vodId).first<{ vod_id: number; vod_name: string; vod_pic: string; vod_year: string; vod_area: string; type_name?: string; vod_plot_name: string; vod_plot_detail: string }>();
+    if (!row) return null;
+
+    const names = String(row.vod_plot_name || '').split('$$$');
+    const details = String(row.vod_plot_detail || '').split('$$$');
+    const plot_list = names.map((name, index) => ({
+      page: index + 1,
+      name: name.trim() || `第 ${index + 1} 集`,
+      detail: String(details[index] || '').trim(),
+    })).filter((plot) => plot.name || plot.detail);
+    if (!plot_list.length) return null;
+
+    const safePage = Math.min(plot_list.length, Math.max(1, Math.floor(page) || 1));
+    const current_plot = plot_list[safePage - 1];
+    db.prepare('UPDATE vod SET vod_hits = vod_hits + 1 WHERE vod_id = ?').bind(vodId).run().catch(() => {});
+    return { ...row, plot_list, current_plot, pagecount: plot_list.length };
   }
 
   /**
@@ -867,9 +917,10 @@ export class VodService {
     };
   }
 
-  static async getArtDetail(db: D1Database, id: number): Promise<ArtItem | null> {
+  static async getArtDetail(db: D1Database, id: number, publishedOnly = false): Promise<ArtItem | null> {
+    const statusCondition = publishedOnly ? ' AND a.art_status = 1' : '';
     const row = await db
-      .prepare('SELECT a.*, t.type_name FROM art a LEFT JOIN type t ON a.type_id = t.type_id WHERE a.art_id = ? LIMIT 1')
+      .prepare(`SELECT a.*, t.type_name FROM art a LEFT JOIN type t ON a.type_id = t.type_id WHERE a.art_id = ?${statusCondition} LIMIT 1`)
       .bind(id)
       .first<ArtItem>();
     if (row) {
@@ -981,8 +1032,9 @@ export class VodService {
     return rows.results || [];
   }
 
-  static async getTopicDetail(db: D1Database, id: number): Promise<(TopicItem & { vods: VodItem[] }) | null> {
-    const row = await db.prepare('SELECT * FROM topic WHERE topic_id = ? LIMIT 1').bind(id).first<TopicItem>();
+  static async getTopicDetail(db: D1Database, id: number, publishedOnly = false): Promise<(TopicItem & { vods: VodItem[] }) | null> {
+    const statusCondition = publishedOnly ? ' AND topic_status = 1' : '';
+    const row = await db.prepare(`SELECT * FROM topic WHERE topic_id = ?${statusCondition} LIMIT 1`).bind(id).first<TopicItem>();
     if (!row) return null;
 
     db.prepare('UPDATE topic SET topic_hits = topic_hits + 1 WHERE topic_id = ?').bind(id).run().catch(() => {});
@@ -992,7 +1044,7 @@ export class VodService {
       const ids = row.topic_rel_vod.split(',').map(Number).filter(Boolean);
       if (ids.length > 0) {
         const placeholders = ids.map(() => '?').join(',');
-        const vRows = await db.prepare(`SELECT vod_id, vod_name, vod_pic, vod_remarks, vod_score, vod_douban_score FROM vod WHERE vod_id IN (${placeholders})`).bind(...ids).all<VodItem>();
+        const vRows = await db.prepare(`SELECT vod_id, vod_name, vod_pic, vod_remarks, vod_score, vod_douban_score FROM vod WHERE vod_status = 1 AND vod_id IN (${placeholders})`).bind(...ids).all<VodItem>();
         vods = vRows.results || [];
       }
     }

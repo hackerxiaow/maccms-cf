@@ -53,7 +53,7 @@
       '<select class="admin-select" id="orderStatus" style="width:auto;min-width:120px"><option value="">全部状态</option><option value="0">待处理</option><option value="1">已完成</option></select>' +
       '<button class="action-btn" id="orderSearchBtn">搜索</button></div>' +
       '<div class="admin-card"><div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
-      '<th>ID</th><th>订单号</th><th>会员</th><th>金额</th><th>积分</th><th>状态</th><th>支付方式</th><th>创建时间</th>' +
+      '<th>ID</th><th>订单号</th><th>会员</th><th>金额</th><th>积分</th><th>状态</th><th>支付方式</th><th>创建时间</th><th>对账</th>' +
       '</tr></thead><tbody id="orderBody"></tbody></table></div><div id="orderPager"></div></div>';
     document.getElementById('orderKw').value = orderKeyword;
     document.getElementById('orderStatus').value = orderStatus;
@@ -65,10 +65,10 @@
     var result = await App.req('/order/list' + query);
     var body = document.getElementById('orderBody');
     if (!body) return;
-    if (result.code !== 0) { body.innerHTML = '<tr><td colspan="8" class="empty">订单列表加载失败</td></tr>'; return; }
+    if (result.code !== 0) { body.innerHTML = '<tr><td colspan="9" class="empty">订单列表加载失败</td></tr>'; return; }
     var rows = (result.data && result.data.list) || [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="8" class="empty">暂无订单记录</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" class="empty">暂无订单记录</td></tr>';
       document.getElementById('orderPager').innerHTML = '';
       return;
     }
@@ -76,8 +76,17 @@
       return '<tr><td>' + order.order_id + '</td><td class="code">' + App.esc(order.order_code) + '</td>' +
         '<td>' + App.esc(order.user_name || ('会员 #' + order.user_id)) + '</td><td>¥' + Number(order.order_price || 0).toFixed(2) + '</td>' +
         '<td>' + (order.order_points || 0) + '</td><td>' + (order.order_status ? '<span class="tag green">已完成</span>' : '<span class="tag gold">待处理</span>') + '</td>' +
-        '<td>' + App.esc(order.order_pay_type || 'manual') + '</td><td>' + App.fmtTime(order.order_time) + '</td></tr>';
+        '<td>' + App.esc(order.order_pay_type || 'manual') + '</td><td>' + App.fmtTime(order.order_time) + '</td>' +
+        '<td>' + (!order.order_status && order.order_pay_type === 'hosted' ? '<button class="action-btn" data-reconcile="' + App.esc(order.order_code) + '">查询支付状态</button>' : '—') + '</td></tr>';
     }).join('');
+    document.getElementById('orderBody').onclick = async function (event) {
+      var button = event.target.closest('[data-reconcile]');
+      if (!button) return;
+      button.disabled = true;
+      var result = await App.req('/payment/reconcile/' + encodeURIComponent(button.dataset.reconcile), { method: 'POST', body: {} });
+      App.toast(result.msg || '支付查询完成', result.code !== 0);
+      renderOrders(page);
+    };
     document.getElementById('orderPager').innerHTML = App.pager(result.data, function (nextPage) { renderOrders(nextPage); });
   }
 

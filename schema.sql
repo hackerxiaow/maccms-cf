@@ -413,6 +413,7 @@ CREATE TABLE IF NOT EXISTS user (
   user_name TEXT NOT NULL UNIQUE,
   user_pwd TEXT NOT NULL,
   user_nick TEXT NOT NULL DEFAULT '',
+  user_pic TEXT NOT NULL DEFAULT '',
   user_email TEXT NOT NULL DEFAULT '',
   user_phone TEXT NOT NULL DEFAULT '',
   user_status INTEGER NOT NULL DEFAULT 1,
@@ -427,6 +428,48 @@ CREATE TABLE IF NOT EXISTS user (
   user_pid INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_user_name ON user(user_name);
+
+CREATE TABLE IF NOT EXISTS user_invite_code (
+  user_id INTEGER PRIMARY KEY,
+  invite_code TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS user_invite_reward (
+  invite_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  inviter_user_id INTEGER NOT NULL,
+  invitee_user_id INTEGER NOT NULL UNIQUE,
+  inviter_points INTEGER NOT NULL DEFAULT 0,
+  invitee_points INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_invite_reward_inviter ON user_invite_reward(inviter_user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_play_progress (
+  progress_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  vod_id INTEGER NOT NULL,
+  play_sid INTEGER NOT NULL DEFAULT 0,
+  play_nid INTEGER NOT NULL DEFAULT 0,
+  episode_name TEXT NOT NULL DEFAULT '',
+  position_seconds INTEGER NOT NULL DEFAULT 0,
+  duration_seconds INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(user_id, vod_id, play_sid, play_nid)
+);
+CREATE INDEX IF NOT EXISTS idx_play_progress_user ON user_play_progress(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_session (
+  session_id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  last_seen_at INTEGER NOT NULL DEFAULT 0,
+  expires_at INTEGER NOT NULL DEFAULT 0,
+  client_ip TEXT NOT NULL DEFAULT '',
+  user_agent TEXT NOT NULL DEFAULT '',
+  revoked_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_user_session_owner ON user_session(user_id, revoked_at, created_at DESC);
 
 -- 15. 会员组与权限策略表 (User Group)
 CREATE TABLE IF NOT EXISTS user_group (
@@ -480,6 +523,29 @@ CREATE TABLE IF NOT EXISTS ulog (
   ulog_time INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_ulog_user ON ulog(user_id, ulog_type, ulog_mid);
+
+CREATE TABLE IF NOT EXISTS vod_access_purchase (
+  purchase_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  vod_id INTEGER NOT NULL,
+  access_type TEXT NOT NULL CHECK(access_type IN ('play','download')),
+  episode_id INTEGER NOT NULL DEFAULT 0,
+  points INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(user_id, vod_id, access_type, episode_id)
+);
+CREATE INDEX IF NOT EXISTS idx_vod_access_purchase_user ON vod_access_purchase(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS content_access_purchase (
+  purchase_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  model TEXT NOT NULL CHECK(model IN ('art')),
+  content_id INTEGER NOT NULL,
+  points INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(user_id, model, content_id)
+);
+CREATE INDEX IF NOT EXISTS idx_content_access_purchase_user ON content_access_purchase(user_id, created_at DESC);
 
 -- 19. 留言与求片报错反馈表 (Gbook)
 CREATE TABLE IF NOT EXISTS gbook (
@@ -694,6 +760,9 @@ INSERT OR IGNORE INTO config (key, value) VALUES
 ('app_allow_xml', '1'), -- 是否开启兼容 XML RSS 5.1/2.0
 ('user_status', '1'), -- 是否开启会员注册
 ('user_reg_points', '50'), -- 注册赠送积分
+('user_invite_status', '0'), -- 是否开启邀请奖励
+('user_invite_points', '50'), -- 邀请人奖励积分
+('user_invited_points', '0'), -- 新会员受邀奖励积分
 ('timming_key', ''), -- 定时采集访问密钥
 ('cron_interval_hours', '24');
 
@@ -1168,6 +1237,8 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_task_log ON scheduled_task_log(created_
 CREATE TABLE IF NOT EXISTS media_asset (
   media_id INTEGER PRIMARY KEY AUTOINCREMENT,
   object_key TEXT NOT NULL UNIQUE,
+  storage_provider TEXT NOT NULL DEFAULT 'r2',
+  provider_ref TEXT NOT NULL DEFAULT '',
   file_name TEXT NOT NULL DEFAULT '',
   content_type TEXT NOT NULL DEFAULT '',
   file_size INTEGER NOT NULL DEFAULT 0,
@@ -1176,6 +1247,55 @@ CREATE TABLE IF NOT EXISTS media_asset (
   created_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_media_created ON media_asset(created_at DESC);
+CREATE TABLE IF NOT EXISTS media_sync_scan (
+  scan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  state TEXT NOT NULL DEFAULT 'running',
+  model_index INTEGER NOT NULL DEFAULT 0,
+  last_id INTEGER NOT NULL DEFAULT 0,
+  scanned_rows INTEGER NOT NULL DEFAULT 0,
+  found_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS media_sync_item (
+  item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scan_id INTEGER NOT NULL,
+  model TEXT NOT NULL,
+  record_id INTEGER NOT NULL,
+  record_name TEXT NOT NULL DEFAULT '',
+  field_name TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  target_url TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  error_text TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(scan_id,model,record_id,field_name,source_url)
+);
+CREATE INDEX IF NOT EXISTS idx_media_sync_item_queue ON media_sync_item(scan_id,status,item_id);
+CREATE INDEX IF NOT EXISTS idx_media_sync_item_target ON media_sync_item(target_url,status);
+CREATE TABLE IF NOT EXISTS telegram_storage_account (
+  account_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_name TEXT NOT NULL DEFAULT '',
+  bot_token TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  weight INTEGER NOT NULL DEFAULT 1,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  upload_count INTEGER NOT NULL DEFAULT 0,
+  failure_count INTEGER NOT NULL DEFAULT 0,
+  last_used_at INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(bot_token,chat_id)
+);
+CREATE INDEX IF NOT EXISTS idx_telegram_storage_enabled ON telegram_storage_account(enabled,account_id);
+CREATE TABLE IF NOT EXISTS telegram_storage_state (
+  state_key TEXT PRIMARY KEY,
+  counter INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO telegram_storage_state (state_key,counter) VALUES ('upload',0);
 CREATE TABLE IF NOT EXISTS user_access_rule (
   rule_id INTEGER PRIMARY KEY AUTOINCREMENT,
   rule_type TEXT NOT NULL DEFAULT 'ip',

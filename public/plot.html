@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>分集剧情 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+<div id="siteHeader"></div>
+<main id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item" style="padding:20px 0;">
+    <section class="hl-row-box">
+      <div class="hl-rb-head clearfix">
+        <h1 id="plotTitle" class="hl-rb-title" style="font-size:1.25rem;font-weight:800;">分集剧情</h1>
+        <span id="plotMeta" class="hl-rb-more hl-text-muted">正在载入…</span>
+      </div>
+      <ul id="plotList" class="hl-one-list clearfix" style="margin-top:14px;"></ul>
+      <article id="plotDetail" style="display:none;padding:16px 0;"></article>
+      <div id="plotEmpty" class="hl-empty" style="display:none;padding:40px 0;">暂无分集剧情</div>
+      <div id="plotPager" class="hl-page-box" style="margin-top:20px;"></div>
+    </section>
+  </div>
+</main>
+<div id="siteFooter"></div>
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+var plotParams = new URLSearchParams(location.search);
+var plotVodId = parseInt(plotParams.get('id') || '0', 10);
+var plotPage = Math.max(1, parseInt(plotParams.get('page') || '1', 10));
+
+$(function () {
+  Theme.init().then(function () { Layout.render('type'); plotVodId ? loadPlotDetail() : loadPlotIndex(); });
+});
+
+function loadPlotIndex() {
+  API.get('/api/plot/list', { page: plotPage, limit: 24 }).then(function (result) {
+    var data = result.data || {};
+    var rows = data.list || [];
+    $('#plotMeta').text('共 ' + (data.total || 0) + ' 部');
+    if (!rows.length) { $('#plotEmpty').show(); return; }
+    $('#plotList').html(rows.map(function (vod) {
+      return '<li class="hl-list-item hl-col-xs-6 hl-col-sm-4 hl-col-md-3" style="margin-bottom:16px;">' + Card.item(vod) +
+        '<a href="/plot.html?id=' + vod.vod_id + '" style="display:block;padding:6px 2px;color:var(--tx-mute,#888);">查看 ' + Number(vod.plot_count || 0) + ' 集剧情</a></li>';
+    }).join(''));
+    Interact.lazy($('#plotList')[0]);
+    $('#plotPager').html(Card.page(data.page, data.pagecount, '/plot.html'));
+  }).catch(function () { $('#plotMeta').text('剧情数据加载失败'); });
+}
+
+function loadPlotDetail() {
+  $('#plotList').hide();
+  API.get('/api/plot/detail/' + plotVodId, { page: plotPage }).then(function (result) {
+    if (result.code !== 0 || !result.data) { $('#plotEmpty').show(); $('#plotMeta').text('该影片暂无剧情'); return; }
+    var data = result.data;
+    document.title = data.vod_name + ' 分集剧情 - MacCMS 影视';
+    $('#plotTitle').html('<a href="/detail.html?id=' + data.vod_id + '">' + U.esc(data.vod_name) + '</a> · 分集剧情');
+    $('#plotMeta').text((data.current_plot.name || '') + '（第 ' + data.current_plot.page + ' / ' + data.pagecount + ' 集）');
+    $('#plotDetail').show().html('<h2 style="font-size:1.1rem;margin:0 0 12px;">' + U.esc(data.current_plot.name) + '</h2>' +
+      '<div style="line-height:1.9;white-space:pre-wrap;">' + U.esc(data.current_plot.detail || '暂无剧情简介') + '</div>');
+    $('#plotList').show().html((data.plot_list || []).map(function (plot) {
+      var active = plot.page === data.current_plot.page;
+      return '<li class="hl-list-item hl-col-xs-6 hl-col-sm-4 hl-col-md-3" style="margin-bottom:10px;"><a class="hl-tabs-btn' + (active ? ' active' : '') + '" style="display:block;" href="/plot.html?id=' + data.vod_id + '&page=' + plot.page + '">' + U.esc(plot.name) + '</a></li>';
+    }).join(''));
+    var previous = data.current_plot.page > 1 ? '<a class="hl-tabs-btn" href="/plot.html?id=' + data.vod_id + '&page=' + (data.current_plot.page - 1) + '">上一集</a>' : '';
+    var next = data.current_plot.page < data.pagecount ? '<a class="hl-tabs-btn" href="/plot.html?id=' + data.vod_id + '&page=' + (data.current_plot.page + 1) + '">下一集</a>' : '';
+    $('#plotPager').html(previous + ' ' + next);
+  }).catch(function () { $('#plotMeta').text('剧情数据加载失败'); });
+}
+</script>
+</body>
+</html>

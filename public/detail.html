@@ -53,6 +53,7 @@
                     </div>
                   </span>
                   <a href="javascript:;" class="hl-btn-border" id="btnData"><i class="iconfont hl-icon-tixing"></i>&nbsp;影片信息</a>
+                  <a href="javascript:;" class="hl-btn-border" id="btnPlot" style="display:none;">分集剧情</a>
                 </div>
 
                 <div class="hl-vod-data hl-full-items" id="dataPanel">
@@ -215,6 +216,7 @@ function renderDetail() {
   $('#dcTitle').text(vod.vod_name);
   $('#dcSub').text(vod.vod_sub || '');
   $('#scoreNum').text(dbl > 0 ? dbl.toFixed(1) : (vod.vod_score || '0.0'));
+  if (Number(vod.vod_plot || 0) > 0) $('#btnPlot').attr('href', '/plot.html?id=' + vod.vod_id).show();
 
   var groups = vod.play_groups || [];
   if (groups.length) {

@@ -2,6 +2,7 @@
 (function (global) {
   'use strict';
   var Views = global.Views = global.Views || {};
+  var resourceModelSelection = 'vod';
 
   var columns = {
     danmaku: ['danmaku_id','user_name','vod_id','episode_id','position_ms','content','status','created_at'],
@@ -32,6 +33,47 @@
     document.getElementById('seckillRows').innerHTML=tableHtml(campaigns,['campaign_id','campaign_name','goods_name','sale_price','inventory','starts_at','ends_at','status'],function(item){return '<button class="action-btn" data-edit-seckill="'+item.campaign_id+'">编辑</button> <button class="action-btn del" data-delete-seckill="'+item.campaign_id+'">删除</button>';});
     host.querySelectorAll('[data-edit-seckill]').forEach(function(button){button.onclick=function(){editSeckill(campaigns.find(function(row){return row.campaign_id===Number(button.dataset.editSeckill);}),goods,host);};});
     host.querySelectorAll('[data-delete-seckill]').forEach(function(button){button.onclick=async function(){if(!confirm('删除此活动？已有订单的活动需要停用保留。'))return;var removed=await App.req('/cloud/seckill/'+button.dataset.deleteSeckill,{method:'DELETE'});if(removed.code!==0)App.toast(removed.msg||'删除失败',true);Views.seckill(host);};});
+  };
+
+  Views.posts = async function(host){
+    host.innerHTML='<div class="toolbar"><select class="admin-select" id="postStatusFilter"><option value="">全部状态</option><option value="0">待审核</option><option value="1">已发布</option><option value="2">已驳回</option></select><button class="action-btn" id="postFilterApply">筛选</button></div><div class="admin-card"><div id="postRows"></div></div>';
+    var result=await App.req('/cloud/posts'+(App.val('postStatusFilter')!==''?'?status='+App.val('postStatusFilter'):'')),rows=result.data||[],states={0:'待审核',1:'已发布',2:'已驳回'},visibility={public:'公开',followers:'关注者',private:'仅自己'};
+    rows=rows.map(function(item){return Object.assign({},item,{user_name:item.user_nick||item.user_name,status_label:states[Number(item.status)]||item.status,visibility_label:visibility[item.visibility]||item.visibility});});
+    document.getElementById('postRows').innerHTML=tableHtml(rows,['post_id','user_name','content','visibility_label','status_label','created_at'],function(item){return '<button class="action-btn" data-post-status="1" data-post-id="'+item.post_id+'">发布</button> <button class="action-btn del" data-post-status="2" data-post-id="'+item.post_id+'">驳回</button> <button class="action-btn" data-post-status="0" data-post-id="'+item.post_id+'">待审核</button>';});
+    App.on('postFilterApply','click',function(){Views.posts(host);});
+    host.querySelectorAll('[data-post-status]').forEach(function(button){button.onclick=async function(){var result=await App.req('/cloud/posts/'+button.dataset.postId+'/status',{method:'POST',body:{status:Number(button.dataset.postStatus)}});App.toast(result.msg||'审核完成',result.code!==0);Views.posts(host);};});
+  };
+
+  Views.resources = async function(host){
+    host.innerHTML='<div class="toolbar"><select class="admin-select" id="resourceModel"><option value="vod">视频图片</option><option value="art">文章图片</option><option value="topic">专题图片</option><option value="actor">明星图片</option><option value="role">角色图片</option><option value="manga">漫画图片</option><option value="website">网址与图标</option></select><button class="action-btn" id="resourceCheckNext">检查下一批（5 条）</button><button class="action-btn" id="resourceRefresh">刷新结果</button><label class="sub"><input type="checkbox" id="resourceFailuresOnly" checked> 只看异常</label></div><div class="sub" id="resourceSummary">正在读取巡检统计…</div><div class="admin-card"><div id="resourceRows"></div></div>';
+    var model=resourceModelSelection,cursorKey='maccms_resource_cursor_'+model;
+    document.getElementById('resourceModel').value=model;
+    async function refresh(){var stats=await App.req('/cloud/resources/stats'),s=stats.data||{};document.getElementById('resourceSummary').textContent='累计检查 '+Number(s.checked||0)+' 个地址 · 异常 '+Number(s.failed||0)+' 个';var failed=document.getElementById('resourceFailuresOnly').checked;var result=await App.req('/cloud/resources/results?model='+encodeURIComponent(model)+(failed?'&failed=1':''));document.getElementById('resourceRows').innerHTML=tableHtml(result.data||[],['model','record_id','url','status_code','latency_ms','checked_at','error']);}
+    App.on('resourceModel','change',function(){resourceModelSelection=App.val('resourceModel')||'vod';Views.resources(host);});
+    App.on('resourceRefresh','click',refresh);
+    App.on('resourceFailuresOnly','change',refresh);
+    App.on('resourceCheckNext','click',async function(){var button=document.getElementById('resourceCheckNext');button.disabled=true;try{var after=Number(localStorage.getItem(cursorKey)||0);var result=await App.req('/cloud/resources/check',{method:'POST',body:{model:model,after_id:after,limit:5}});if(result.code!==0){App.toast(result.msg||'检查失败',true);return;}var data=result.data||{};if(data.done)localStorage.setItem(cursorKey,'0');else localStorage.setItem(cursorKey,String(data.next_id||0));App.toast(result.msg||'检查完成');await refresh();}finally{button.disabled=false;}});
+    await refresh();
+  };
+
+  Views.translations = function(host){
+    host.innerHTML='<div class="admin-card"><div class="card-head"><h3>内容字段翻译</h3></div><div class="row3"><div class="form-group"><label class="form-label">内容模型</label><select class="admin-select" id="translationModel"><option value="vod">视频</option><option value="art">文章</option><option value="topic">专题</option><option value="actor">明星</option><option value="role">角色</option><option value="manga">漫画</option><option value="website">网址</option></select></div>'+App.field('内容 ID',App.input('translationRecordId','','必填','number'))+App.field('语言代码',App.input('translationLanguage','en-US','例如 en-US、ja-JP'))+'</div>'+App.field('字段与译文 JSON',App.textarea('translationFields','{}',14))+'<div class="toolbar"><button class="action-btn" id="translationLoad">读取已有译文</button><button class="btn-create" id="translationSave">保存译文</button></div><p class="sub">只接受模型对应的名称、简介、正文等安全字段。前台 REST API 通过查询参数 lang=en-US 返回译文；未填写的字段保留原文。</p></div>';
+    App.on('translationLoad','click',async function(){var model=App.val('translationModel'),id=App.intVal('translationRecordId'),language=App.val('translationLanguage');var result=await App.req('/cloud/translations?model='+encodeURIComponent(model)+'&record_id='+id+'&language='+encodeURIComponent(language));if(result.code!==0){App.toast(result.msg||'读取失败',true);return;}document.getElementById('translationFields').value=JSON.stringify(result.data||{},null,2);});
+    App.on('translationSave','click',async function(){var fields;try{fields=JSON.parse(App.val('translationFields')||'{}');}catch{App.toast('译文必须是有效 JSON 对象',true);return;}var result=await App.req('/cloud/translations/save',{method:'POST',body:{model:App.val('translationModel'),record_id:App.intVal('translationRecordId'),language:App.val('translationLanguage'),fields:fields}});App.toast(result.msg||'保存完成',result.code!==0);});
+  };
+
+  Views.withdrawals = async function(host){
+    host.innerHTML='<div class="toolbar"><span class="sub">会员钱包提现金额在申请时已冻结；驳回会自动退回，标记已打款只记录处理结果。</span><button class="action-btn" id="withdrawalsRefresh">刷新</button></div><div class="admin-card"><div id="withdrawalRows"></div></div>';
+    var result=await App.req('/cloud/withdrawals'),data=result.data||{},list=data.list||[];
+    var statuses={pending:'待审核',approved:'已通过待打款',rejected:'已驳回',paid:'已打款'};
+    var rows=list.map(function(item){return Object.assign({},item,{amount_yuan:'¥ '+(Number(item.amount_cents||0)/100).toFixed(2),status_label:statuses[item.status]||item.status});});
+    document.getElementById('withdrawalRows').innerHTML=tableHtml(rows,['withdrawal_id','user_name','amount_yuan','payout_method','payout_account','status_label','note','created_at'],function(item){
+      if(item.status==='pending')return '<button class="action-btn" data-withdraw-action="approved" data-withdraw-id="'+item.withdrawal_id+'">通过</button> <button class="action-btn del" data-withdraw-action="rejected" data-withdraw-id="'+item.withdrawal_id+'">驳回</button> <button class="action-btn" data-withdraw-action="paid" data-withdraw-id="'+item.withdrawal_id+'">已打款</button>';
+      if(item.status==='approved')return '<button class="action-btn" data-withdraw-action="paid" data-withdraw-id="'+item.withdrawal_id+'">登记已打款</button> <button class="action-btn del" data-withdraw-action="rejected" data-withdraw-id="'+item.withdrawal_id+'">驳回并退款</button>';
+      return '<span class="muted">已结束</span>';
+    });
+    App.on('withdrawalsRefresh','click',function(){Views.withdrawals(host);});
+    host.querySelectorAll('[data-withdraw-action]').forEach(function(button){button.onclick=async function(){var action=button.dataset.withdrawAction;var label=action==='approved'?'通过申请':action==='paid'?'登记打款':'驳回并退回余额';if(!confirm('确认'+label+'？'))return;var note=prompt('处理备注（可留空）','')||'';var updated=await App.req('/cloud/withdrawals/'+button.dataset.withdrawId+'/status',{method:'POST',body:{status:action,note:note}});if(updated.code!==0)App.toast(updated.msg||'处理失败',true);else App.toast(updated.msg||'已处理');Views.withdrawals(host);};});
   };
 
   function editSeckill(item,goods,host){
@@ -73,7 +115,7 @@
       (resource === 'mall-orders' ? App.select('cloudDataStatus', [{value:'',label:'全部订单'},{value:0,label:'待核款'},{value:1,label:'已确认'},{value:2,label:'已完成'},{value:3,label:'已取消'}], '', null) :
         (['danmaku','chat','messages','play-fails','coupons','goods','notices'].includes(resource) ? App.select('cloudDataStatus', [{value:'',label:'全部状态'},{value:0,label:'待处理/停用'},{value:1,label:'已通过/启用'}], '', null) : '')) +
       '<button class="action-btn" id="cloudDataSearch">搜索</button>' + (canEdit ? '<button class="btn-create" id="cloudDataAdd">+ 新增</button>' : '') +
-      (resource === 'cash' ? '<button class="btn-create" id="cashAdjust">积分调整</button>' : '') +
+      (resource === 'cash' ? '<button class="btn-create" id="cashAdjust">调整积分 / 钱包</button>' : '') +
       '</div><div class="admin-card"><div style="overflow-x:auto"><table class="data-table"><thead><tr><th><input type="checkbox" id="cloudSelectAll"></th>' +
       columns[resource].map(function (key) { return '<th>' + App.esc(key) + '</th>'; }).join('') + '<th>操作</th></tr></thead><tbody id="cloudDataRows"></tbody></table></div><div id="cloudDataPager"></div></div>';
     host.innerHTML = body;
@@ -152,9 +194,9 @@
   async function openCashAdjustment(){
     var body=App.field('会员 ID',App.input('cashUserId','','必填','number'))+
       App.field('调整积分（可正可负）',App.input('cashPoints','0','','number'))+
-      App.field('现金金额记账（不触发支付）',App.input('cashAmount','0','','number'))+
+      App.field('钱包金额调整（正数入账，负数扣款）',App.input('cashAmount','0','','number'))+
       App.field('备注',App.textarea('cashNote','管理员手动调整',3));
-    App.modal('会员积分调整',body,async function(){
+    App.modal('会员积分 / 钱包调整',body,async function(){
       var result=await App.req('/cloud/cash/adjust',{method:'POST',body:{user_id:App.intVal('cashUserId'),points:Number(App.val('cashPoints'))||0,amount:Number(App.val('cashAmount'))||0,note:App.val('cashNote')}});
       if(result.code===0){App.closeModal();App.toast(result.msg);Views.cash(document.getElementById('viewHost'));}else App.toast(result.msg||'调整失败',true);
     });
@@ -193,7 +235,7 @@
   }
 
   Views.media = async function(host){
-    host.innerHTML='<div class="admin-card"><div class="card-head"><h3>Cloudflare R2 图片存储</h3></div><p class="sub">支持 JPEG、PNG、WebP、GIF、AVIF，单文件不超过 10 MB。上传需要部署时绑定 MEDIA_BUCKET。</p><div class="toolbar"><input type="file" id="mediaFile" accept="image/jpeg,image/png,image/webp,image/gif,image/avif"><button class="btn-create" id="mediaUpload">上传图片</button></div><div id="mediaHint" class="sub"></div></div><div class="admin-card"><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>预览</th><th>原文件名</th><th>类型</th><th>大小</th><th>URL</th><th>上传时间</th><th>操作</th></tr></thead><tbody id="mediaRows"></tbody></table></div><div id="mediaPager"></div></div>';
+    host.innerHTML='<div class="admin-card"><div class="card-head"><h3>TG Bot 多频道投递池</h3><div class="toolbar" style="margin:0"><button class="action-btn" id="tgTestAll">测试已启用账户</button><button class="btn-create" id="tgAddAccount">+ 添加投递目标</button></div></div><p class="sub">同一个 Bot Token 可分别配置多个频道/群组，按各投递目标权重轮询；图片通过本站链接代取 Telegram 文件。Token 只写入，不会回显；历史附件依赖所属 Bot 读取，请停用代替删除仍有附件的账户。</p><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Bot / 投递目标</th><th>频道 / 群组 ID</th><th>权重</th><th>状态</th><th>成功 / 失败</th><th>最近异常</th><th>操作</th></tr></thead><tbody id="tgAccountRows"><tr><td colspan="7" class="empty">正在读取账户…</td></tr></tbody></table></div><div id="tgAccountHint" class="sub"></div></div><div class="admin-card"><div class="card-head"><h3>外链图片迁移</h3></div><p class="sub">扫描内容模型中的图片字段，将远程图片保存到当前选择的存储后端后再替换引用。同步按小批次运行，扫描与替换记录可追踪，支持失败重试和恢复原地址。</p><div class="toolbar"><button class="btn-create" id="mediaScan">扫描外链图片</button><button class="action-btn" id="mediaSync">同步待处理图片</button><button class="action-btn" id="mediaRetry">重试失败项</button></div><div id="mediaSyncHint" class="sub">正在读取迁移状态…</div><div id="mediaSyncCounts" class="metric-grid"></div><div style="overflow-x:auto;margin-top:12px"><table class="data-table"><thead><tr><th>模型 / 记录</th><th>字段</th><th>原图片地址</th><th>存储地址 / 状态</th><th>尝试</th><th>操作</th></tr></thead><tbody id="mediaSyncRows"></tbody></table></div></div><div class="admin-card"><div class="card-head"><h3>附件上传</h3></div><p class="sub">支持 JPEG、PNG、WebP、GIF、AVIF，单文件不超过 10 MB。TG Bot/Telegraph 当前仅支持 JPEG、PNG、WebP、GIF。</p><div class="toolbar"><input type="file" id="mediaFile" accept="image/jpeg,image/png,image/webp,image/gif,image/avif"><button class="btn-create" id="mediaUpload">上传附件</button></div><div id="mediaHint" class="sub"></div></div><div class="admin-card"><div class="card-head"><h3>附件管理</h3><span id="mediaTotalHint" class="sub"></span></div><div class="toolbar"><input id="mediaSearch" class="input-box" placeholder="搜索文件名或链接" style="max-width:280px"><select id="mediaProviderFilter" class="admin-select"><option value="">全部存储</option><option value="r2">Cloudflare R2</option><option value="telegram">TG Bot</option><option value="telegraph">Telegraph 服务</option></select><button class="action-btn" id="mediaSearchBtn">筛选</button><button class="action-btn del" id="mediaDeleteSelected">批量删除</button><label class="sub"><input type="checkbox" id="mediaSelectAll"> 全选本页</label></div><div id="mediaGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:12px"></div><div id="mediaPager"></div></div>';
     App.on('mediaUpload','click',async function(){
       var file=document.getElementById('mediaFile').files[0];if(!file){App.toast('请选择图片文件',true);return;}
       var form=new FormData();form.append('file',file);
@@ -202,15 +244,58 @@
       var hint=document.getElementById('mediaHint');if(hint)hint.textContent=result.msg||'';
       if(result.code===0){App.toast('图片上传成功：'+result.data.public_url);Views.media(host);}else App.toast(result.msg||'上传失败',true);
     });
+    App.on('mediaScan','click',async function(){
+        var button=document.getElementById('mediaScan'),hint=document.getElementById('mediaSyncHint');if(button)button.disabled=true;
+      try{
+        var started=await App.req('/cloud/media/sync/scan',{method:'POST',body:{}});if(started.code!==0)throw new Error(started.msg||'创建扫描任务失败');
+        var scanId=started.data.scan_id,complete=false;
+        while(!complete){var next=await App.req('/cloud/media/sync/scan/'+scanId+'/continue',{method:'POST',body:{}});if(next.code!==0)throw new Error(next.msg||'扫描失败');complete=!!next.data.complete;var scan=next.data.scan||{};if(hint)hint.textContent='扫描中：已检查 '+(scan.scanned_rows||0)+' 条记录，发现 '+(scan.found_count||0)+' 个图片外链…';await renderMediaSync(host);}
+        App.toast('图片外链扫描完成');
+      }catch(error){App.toast(error.message||'扫描失败',true);}finally{if(button)button.disabled=false;await renderMediaSync(host);}
+    });
+    App.on('mediaSync','click',async function(){
+      var button=document.getElementById('mediaSync'),hint=document.getElementById('mediaSyncHint');if(button)button.disabled=true;
+      try{while(true){var result=await App.req('/cloud/media/sync/process',{method:'POST',body:{}});if(result.code!==0)throw new Error(result.msg||'同步失败');var processed=Number(result.data.processed||0);await renderMediaSync(host);if(hint)hint.textContent='本批完成 '+result.data.done+' 张，失败 '+result.data.failed+' 张；正在继续…';if(processed===0)break;}}
+      catch(error){App.toast(error.message||'同步失败',true);}finally{if(button)button.disabled=false;await renderMediaSync(host);}
+    });
+    App.on('mediaRetry','click',async function(){var result=await App.req('/cloud/media/sync/retry',{method:'POST',body:{}});App.toast(result.msg||'已重试');renderMediaSync(host);});
+    var syncRows=document.getElementById('mediaSyncRows');if(syncRows)syncRows.onclick=async function(event){var button=event.target.closest('[data-restore]');if(!button)return;if(!confirm('将该内容字段中的 R2 地址恢复为原始图片地址？'))return;var result=await App.req('/cloud/media/sync/'+button.dataset.restore+'/restore',{method:'POST',body:{}});App.toast(result.msg||'操作完成',result.code!==0);renderMediaSync(host);};
+    App.on('tgAddAccount','click',function(){editTelegramAccount(null,host);});
+    App.on('tgTestAll','click',async function(){var loaded=await App.req('/cloud/media/telegram/accounts'),accounts=(loaded.data||{}).accounts||[],active=accounts.filter(function(item){return Number(item.enabled)===1;});if(!active.length){App.toast('没有已启用的 TG Bot 账户',true);return;}var checks=await Promise.all(active.map(function(item){return App.req('/cloud/media/telegram/accounts/'+item.account_id+'/test',{method:'POST',body:{}});}));var ok=checks.filter(function(item){return item.code===0;}).length;App.toast('连接正常 '+ok+'/'+checks.length+(ok<checks.length?'，请查看每个账户的异常信息':''),ok===0);renderTelegramAccounts(host);});
+    var tgRows=document.getElementById('tgAccountRows');if(tgRows)tgRows.onclick=async function(event){var button=event.target.closest('[data-tg-action]');if(!button)return;var id=Number(button.dataset.id),type=button.dataset.tgAction;if(type==='edit'){var state=await App.req('/cloud/media/telegram/accounts');var item=((state.data||{}).accounts||[]).find(function(row){return Number(row.account_id)===id;});editTelegramAccount(item,host);}else if(type==='test'){var result=await App.req('/cloud/media/telegram/accounts/'+id+'/test',{method:'POST',body:{}});App.toast(result.msg||'测试完成',result.code!==0);renderTelegramAccounts(host);}else if(type==='delete'){if(!confirm('删除此 Bot 账户？有历史附件时系统会阻止删除。'))return;var result=await App.req('/cloud/media/telegram/accounts/'+id,{method:'DELETE'});App.toast(result.msg||'已删除',result.code!==0);renderTelegramAccounts(host);}};
+    App.on('mediaSearchBtn','click',function(){renderMedia(host,1);});
+    App.on('mediaDeleteSelected','click',async function(){var selected=Array.from(document.querySelectorAll('[data-media-select]:checked')).map(function(box){return Number(box.value);});if(!selected.length){App.toast('请先选择附件',true);return;}if(!confirm('删除选中的 '+selected.length+' 个附件？被内容引用的图片会自动跳过。'))return;var result=await App.req('/cloud/media/delete',{method:'POST',body:{ids:selected}});App.toast(result.msg||'批量删除完成');if(result.data&&result.data.skipped&&result.data.skipped.length)App.toast(result.data.skipped.slice(0,3).map(function(item){return '#'+item.media_id+' '+item.reason;}).join('；'),true);renderMedia(host,1);});
+    App.on('mediaSelectAll','change',function(){var checked=document.getElementById('mediaSelectAll').checked;document.querySelectorAll('[data-media-select]').forEach(function(box){box.checked=checked;});});
+    var mediaGrid=document.getElementById('mediaGrid');if(mediaGrid)mediaGrid.onclick=async function(event){var copy=event.target.closest('[data-media-copy]'),del=event.target.closest('[data-media-delete]');if(copy){var url=copy.dataset.mediaCopy;try{await navigator.clipboard.writeText(url);App.toast('链接已复制');}catch(error){var field=document.createElement('textarea');field.value=url;document.body.appendChild(field);field.select();document.execCommand('copy');field.remove();App.toast('链接已复制');}}else if(del){if(!confirm('删除这个附件？被内容引用的图片需要先恢复原地址。'))return;var result=await App.req('/cloud/media/delete',{method:'POST',body:{ids:[Number(del.dataset.mediaDelete)]}});App.toast(result.msg||'删除完成',!!(result.data&&result.data.skipped&&result.data.skipped.length));renderMedia(host,1);}};
+    renderTelegramAccounts(host);renderMediaSync(host);
     renderMedia(host,1);
   };
+  async function renderTelegramAccounts(host){
+    var result=await App.req('/cloud/media/telegram/accounts'),data=result.data||{},rows=data.accounts||[],tbody=document.getElementById('tgAccountRows');if(!tbody)return;
+    tbody.innerHTML=rows.length?rows.map(function(item){return '<tr><td>'+App.esc(item.account_name)+'<div class="muted">'+(item.token_set?'Token 已保存':'未设置 Token')+'</div></td><td>'+App.esc(item.chat_id)+'</td><td>'+item.weight+'</td><td>'+(Number(item.enabled)===1?'已启用':'已停用')+'</td><td>'+item.upload_count+' / '+item.failure_count+'</td><td style="max-width:260px;white-space:normal;color:'+(item.last_error?'#b54747':'inherit')+'">'+App.esc(item.last_error||'—')+'</td><td><button class="action-btn" data-tg-action="edit" data-id="'+item.account_id+'">编辑</button> <button class="action-btn" data-tg-action="test" data-id="'+item.account_id+'">测试</button> <button class="action-btn del" data-tg-action="delete" data-id="'+item.account_id+'">删除</button></td></tr>';}).join(''):'<tr><td colspan="7" class="empty">还没有 TG Bot 账户；在系统设置中选择 TG Bot 后，请先添加至少一个账户。</td></tr>';
+    var hint=document.getElementById('tgAccountHint');if(hint)hint.textContent='已启用 '+(data.enabled||0)+' 个账户，轮询总权重 '+(data.total_weight||0)+'；当前保存 '+(data.total||0)+' 个账户。';
+  }
+  function editTelegramAccount(item,host){
+    item=item||{};var body=App.field('账户名称',App.input('tgAccountName',item.account_name||''))+App.field('Bot Token',App.input('tgBotToken','',item.token_set?'已保存，留空保持不变':'请粘贴 Bot Token', 'password'))+(item.token_set?'<div class="sub">已保存 Token；同一 Token 可重复添加，只要频道/群组 ID 不同。留空会保持现有值。</div>':'')+
+      '<div class="row2">'+App.field('频道 / 群组 ID',App.input('tgChatId',item.chat_id||''))+App.field('负载权重（1–100）',App.input('tgWeight',item.weight||1,'','number'))+'</div>'+App.field('状态',App.select('tgEnabled',[{value:1,label:'启用并参与轮询'},{value:0,label:'停用'}],item.enabled==null?1:item.enabled));
+    App.modal(item.account_id?'编辑 TG Bot 账户':'添加 TG Bot 账户',body,async function(){var payload={account_id:item.account_id||0,account_name:App.val('tgAccountName'),bot_token:App.val('tgBotToken'),chat_id:App.val('tgChatId'),weight:App.intVal('tgWeight'),enabled:App.intVal('tgEnabled')};var result=await App.req('/cloud/media/telegram/accounts/save',{method:'POST',body:payload});if(result.code===0){App.closeModal();App.toast(result.msg);renderTelegramAccounts(host);}else App.toast(result.msg||'保存失败',true);},'保存账户');
+  }
+  async function renderMediaSync(host){
+    var result=await App.req('/cloud/media/sync'),data=result.data||{},scan=data.scan,counts=data.counts||{},hint=document.getElementById('mediaSyncHint'),stats=document.getElementById('mediaSyncCounts'),tbody=document.getElementById('mediaSyncRows');if(!tbody)return;
+    if(hint)hint.textContent=scan?'扫描状态：'+(scan.state==='done'?'已完成':'进行中')+'；已检查 '+(scan.scanned_rows||0)+' 条记录，发现 '+(scan.found_count||0)+' 个外链。同步按钮会按存储后端的小批次持续处理。':'尚未扫描内容图片字段。';
+    if(stats)stats.innerHTML=[['待同步',counts.pending||0],['已同步',counts.done||0],['失败',counts.failed||0],['已跳过',counts.skipped||0]].map(function(item){return '<div class="metric-card"><span>'+item[0]+'</span><strong class="metric-num">'+item[1]+'</strong></div>';}).join('');
+    var rows=data.list||[];tbody.innerHTML=rows.length?rows.map(function(row){var status={pending:'待同步',done:'已替换',failed:'失败：'+(row.error_text||''),skipped:'已跳过：'+(row.error_text||''),restored:'已恢复'}[row.status]||row.status;var target=row.target_url?'<a href="'+App.esc(row.target_url)+'" target="_blank" rel="noopener">'+App.esc(row.target_url)+'</a>':App.esc(status);var restore=row.status==='done'?'<button class="action-btn" data-restore="'+row.item_id+'">恢复原地址</button>':'';return '<tr><td>'+App.esc(row.model)+' #'+row.record_id+' '+App.esc(row.record_name||'')+'</td><td>'+App.esc(row.field_name)+'</td><td style="max-width:300px;word-break:break-all">'+App.esc(row.source_url)+'</td><td style="max-width:300px;word-break:break-all">'+target+'</td><td>'+row.attempts+'</td><td>'+restore+'</td></tr>';}).join(''):'<tr><td colspan="6" class="empty">暂无图片外链记录</td></tr>';
+  }
   async function renderMedia(host,page){
-    var result=await App.req('/cloud/media?page='+page+'&limit=24'),data=result.data||{list:[]},rows=data.list||[],tbody=document.getElementById('mediaRows');
-    if(!tbody)return;
-    tbody.innerHTML=rows.length?rows.map(function(row){return '<tr><td><img src="'+App.esc(row.public_url)+'" alt="" style="width:64px;height:44px;object-fit:cover;border-radius:5px"></td><td>'+App.esc(row.file_name)+'</td><td>'+App.esc(row.content_type)+'</td><td>'+Math.round((row.file_size||0)/1024)+' KB</td><td><input readonly class="input-box" value="'+App.esc(row.public_url)+'" style="min-width:220px" onclick="this.select()"></td><td>'+App.fmtTime(row.created_at)+'</td><td><button class="action-btn del" data-delete="'+row.media_id+'">删除</button></td></tr>';}).join(''):'<tr><td colspan="7" class="empty">尚无媒体文件</td></tr>';
-    tbody.querySelectorAll('[data-delete]').forEach(function(button){button.onclick=async function(){if(!confirm('删除 R2 文件及数据库记录？'))return;await App.req('/cloud/media/'+button.dataset.delete,{method:'DELETE'});renderMedia(host,page);};});
+    var wd=App.val('mediaSearch'),provider=App.val('mediaProviderFilter'),params=new URLSearchParams({page:String(page),limit:'24'});if(wd)params.set('wd',wd);if(provider)params.set('provider',provider);
+    var result=await App.req('/cloud/media?'+params.toString()),data=result.data||{list:[]},rows=data.list||[],grid=document.getElementById('mediaGrid');if(!grid)return;
+    var providerNames={r2:'R2',telegram:'TG Bot',telegraph:'Telegraph'};
+    grid.innerHTML=rows.length?rows.map(function(row){return '<article class="admin-card" style="margin:0;padding:10px;min-width:0"><label class="sub"><input type="checkbox" data-media-select value="'+row.media_id+'"> 选择</label><img src="'+App.esc(row.public_url)+'" alt="" loading="lazy" style="display:block;width:100%;height:150px;margin:7px 0;object-fit:contain;background:var(--surface-2,#f3f5f7);border-radius:7px"><strong style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+App.esc(row.file_name)+'</strong><div class="muted">'+App.esc(providerNames[row.storage_provider]||row.storage_provider)+' · '+App.esc(row.content_type)+' · '+Math.max(1,Math.round((row.file_size||0)/1024))+' KB</div><input readonly class="input-box" value="'+App.esc(row.public_url)+'" style="width:100%;margin:7px 0;font-size:11px" onclick="this.select()"><div class="toolbar" style="margin:0"><button class="action-btn" data-media-copy="'+App.esc(row.public_url)+'">复制链接</button><button class="action-btn del" data-media-delete="'+row.media_id+'">删除</button><span class="muted">'+App.fmtTime(row.created_at)+'</span></div></article>';}).join(''):'<div class="empty" style="grid-column:1/-1">尚无符合条件的附件</div>';
+    var all=document.getElementById('mediaSelectAll');if(all)all.checked=false;
+    var totalHint=document.getElementById('mediaTotalHint');if(totalHint)totalHint.textContent='共 '+(data.total||0)+' 个附件';
     var pager=document.getElementById('mediaPager');if(pager)pager.innerHTML=App.pager(data,function(next){renderMedia(host,next);});
-    if(!data.bucket_ready){var hint=document.getElementById('mediaHint');if(hint)hint.textContent='R2 未绑定：后台仍可管理已有地址，但不能上传或删除对象。';}
+    if(!data.bucket_ready&&data.storage_provider==='r2'){var hint=document.getElementById('mediaHint');if(hint)hint.textContent='R2 未绑定：请在系统设置中选择 TG Bot 或 Telegraph，或绑定 MEDIA_BUCKET。';}
+    if(data.storage_provider==='telegram'&&!data.telegram_accounts_ready){var hint=document.getElementById('mediaHint');if(hint)hint.textContent='TG Bot 尚无已启用账户：请在上方添加 Bot Token 和频道/群组 ID。';}
   }
 
   Views.quality = async function(host){

@@ -97,10 +97,10 @@ function renderDownGroups(groups) {
       '</div>' +
       '<ul class="hl-plays-list clearfix" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:8px;padding:0;margin:0;list-style:none;">';
 
-    g.urls.forEach(function (ep) {
+    g.urls.forEach(function (ep, ei) {
       groupHtml +=
         '<li>' +
-        '<a href="' + U.esc(ep.url) + '" target="_blank" download style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-subs,#f8fafc);border-radius:6px;text-decoration:none;color:inherit;font-size:.9rem;border:1px solid var(--bd-color,#eee);">' +
+        '<a href="javascript:;" class="download-episode" data-sid="' + gi + '" data-nid="' + ei + '" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-subs,#f8fafc);border-radius:6px;text-decoration:none;color:inherit;font-size:.9rem;border:1px solid var(--bd-color,#eee);">' +
         '<span class="hl-lc-1">' + U.esc(ep.name) + '</span>' +
         '<i class="iconfont hl-icon-xiazai" style="color:var(--hl-site,#0099ff);font-size:1rem;"></i>' +
         '</a></li>';
@@ -108,6 +108,27 @@ function renderDownGroups(groups) {
 
     groupHtml += '</ul></div>';
     box.append(groupHtml);
+  });
+
+  box.off('click', '.download-episode').on('click', '.download-episode', function () {
+    var sid = parseInt($(this).data('sid'), 10);
+    var nid = parseInt($(this).data('nid'), 10);
+    var button = this;
+    var resolve = function (password) {
+      return API.post('/api/vod/resolve', { vod_id: vodId, sid: sid, nid: nid, mode: 'download', password: password || '' });
+    };
+    resolve('').then(function (result) {
+      if (result.code !== 0 && result.data && result.data.password_required) {
+        var password = window.prompt('请输入下载密码');
+        if (password === null) return;
+        return resolve(password).then(function (retry) {
+          if (retry.code !== 0 || !retry.data || !retry.data.url) { alert(retry.msg || '下载权限验证失败'); return; }
+          location.href = retry.data.url;
+        });
+      }
+      if (result.code !== 0 || !result.data || !result.data.url) { alert(result.msg || '当前账号无下载权限'); return; }
+      location.href = result.data.url;
+    }).catch(function () { alert('下载地址获取失败，请稍后重试'); });
   });
 }
 </script>

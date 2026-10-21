@@ -123,6 +123,8 @@
               '"><i class="iconfont hl-icon-dianshiju3"></i><span>' + U.esc(t.type_name) + '</span></a></li>';
           });
           d += '<li class="hl-menus-item"><a href="/actor.html"><i class="iconfont hl-icon-mingxing"></i><span>明星图谱</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/role.html"><i class="iconfont hl-icon-mingxing"></i><span>影视角色</span></a></li>';
+          d += '<li class="hl-menus-item"><a href="/plot.html"><i class="iconfont hl-icon-shipin"></i><span>分集剧情</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/live.html"><i class="iconfont hl-icon-dianshiju3"></i><span>电视直播</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/manga.html"><i class="iconfont hl-icon-dianshiju3"></i><span>漫画连载</span></a></li>';
           d += '<li class="hl-menus-item"><a href="/topic.html"><i class="iconfont hl-icon-zhuanti"></i><span>精彩专题</span></a></li>';
@@ -210,13 +212,15 @@
         '          <div class="hl-col-sm-8 hl-col-xs-12">' +
         '            <div class="hl-foot-text hl-text-muted">' +
         '              <p>本站只提供 WEB 页面服务，所有影视内容均由采集接口自动获取，本站不存储、不制作任何视频。</p>' +
-        '              <p>基于 Cloudflare Workers + Pages + D1 边缘云原生架构构建 · 100% 兼容 MacCMS 8/10 协议</p>' +
+        '              <p>基于 Cloudflare Workers + Pages + D1 构建，使用 MacCMS 10 数据结构与采集协议</p>' +
         '            </div>' +
         '            <div class="hl-map-nav hl-text-site hl-hidden-xs">' +
         '              <a href="/">首页</a><span>—</span>' +
         '              <a href="/type.html">全部分类</a><span>—</span>' +
         '              <a href="/rank.html">排行榜</a><span>—</span>' +
         '              <a href="/actor.html">明星库</a><span>—</span>' +
+        '              <a href="/role.html">影视角色</a><span>—</span>' +
+        '              <a href="/plot.html">分集剧情</a><span>—</span>' +
         '              <a href="/topic.html">专题</a><span>—</span>' +
         '              <a href="/art.html">资讯</a><span>—</span>' +
         '              <a href="/gbook.html">留言求片</a><span>—</span>' +
@@ -259,6 +263,15 @@
     },
 
     render: function (activeKey) {
+      if (!document.querySelector('link[rel="manifest"]')) {
+        var manifest = document.createElement('link');
+        manifest.rel = 'manifest';
+        manifest.href = '/manifest.webmanifest';
+        document.head.appendChild(manifest);
+      }
+      if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+        navigator.serviceWorker.register('/sw.js').catch(function () {});
+      }
       this.header(activeKey);
       this.footer();
     }

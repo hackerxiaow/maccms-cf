@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "MacCMS 影视",
+  "short_name": "影视",
+  "description": "影视内容与会员中心",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#101218",
+  "theme_color": "#0099ff",
+  "icons": [
+    { "src": "/static/pwa-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

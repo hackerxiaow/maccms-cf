@@ -15,8 +15,29 @@ import { ThemeService } from '../services/theme.ts';
 import { AuthUtils } from '../utils/auth.ts';
 import { WebsiteService } from '../services/website.ts';
 import { MangaService } from '../services/manga.ts';
+import { deleteStoredMedia, loadMediaStorageConfig, uploadToTelegraph, uploadToTelegram } from './cloud-admin.ts';
+import { clearRateLimit, consumeRateLimit, MemberSecurityService } from '../services/member-security.ts';
+import { SearchService } from '../services/search.ts';
+import { PaymentService } from '../services/payment.ts';
+import { WebPushService } from '../services/web-push.ts';
+import { ContentTranslationService } from '../services/content-translation.ts';
 
 export const apiRouter = new Hono<{ Bindings: Bindings }>();
+
+const sanitizeVodPublic = <T extends Record<string, any>>(item: T, hidePlotDetail = false): Omit<T, never> => {
+  const safe = { ...item } as Record<string, any>;
+  for (const key of ['vod_play_url','vod_down_url','vod_pwd','vod_pwd_play','vod_pwd_down','vod_pwd_url','vod_pwd_play_url','vod_pwd_down_url']) delete safe[key];
+  if (hidePlotDetail) delete safe.vod_plot_detail;
+  return safe as Omit<T, never>;
+};
+
+const sanitizeArtPublic = <T extends Record<string, any>>(item: T, includeContent = false): T => {
+  const safe = { ...item };
+  delete (safe as Record<string, any>).art_pwd;
+  delete (safe as Record<string, any>).art_pwd_url;
+  if (!includeContent) delete (safe as Record<string, any>).art_content;
+  return safe;
+};
 
 // 0. 主题配置接口 (前台页面启动时一次性拉取，用于应用配色/圆角/区块开关)
 apiRouter.get('/theme', async (c) => {
@@ -46,31 +67,41 @@ apiRouter.get('/vod/list', async (c) => {
   const by = (query.by as any) || 'time';
   const order = (query.order as any) || 'desc';
 
-  const data = await VodService.queryVods(c.env.DB, {
-    page,
-    limit,
-    typeId,
-    year,
-    area,
-    wd,
-    letter,
-    by,
-    order,
-    status: 1,
-    vodClass: query.vod_class,
-    vodLang: query.vod_lang,
-    version: query.version,
-    state: query.state,
-    tag: query.tag,
-    actor: query.actor,
-    director: query.director,
-    weekday: query.weekday !== undefined ? parseInt(query.weekday, 10) : undefined,
-  });
+  let data: Awaited<ReturnType<typeof VodService.queryVods>>;
+  let searchMode = 'sql';
+  const indexEligible = Boolean(wd && !typeId && !year && !area && !letter && !query.vod_class && !query.vod_lang
+    && !query.version && !query.state && !query.tag && !query.actor && !query.director && query.weekday === undefined);
+  if (indexEligible && await SearchService.isConfigured(c.env.DB)) {
+    try {
+      const matches = await SearchService.query(c.env.DB, 'vod', wd!, page, Math.min(100, Math.max(1, limit)));
+      const lookup = await VodService.queryVods(c.env.DB, { page: 1, limit: Math.max(1, matches.ids.length), ids: matches.ids, status: 1 });
+      const byId = new Map(lookup.list.map((item) => [item.vod_id, item]));
+      const ordered = matches.ids.map((id) => byId.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item));
+      data = { list: ordered, total: matches.total, page, limit, pagecount: Math.ceil(matches.total / limit) };
+      searchMode = 'meilisearch';
+    } catch (error) {
+      console.error('Meilisearch video query failed; using D1 search:', error);
+      data = await VodService.queryVods(c.env.DB, {
+        page, limit, typeId, year, area, wd, letter, by, order, status: 1,
+        vodClass: query.vod_class, vodLang: query.vod_lang, version: query.version, state: query.state,
+        tag: query.tag, actor: query.actor, director: query.director,
+        weekday: query.weekday !== undefined ? parseInt(query.weekday, 10) : undefined,
+      });
+    }
+  } else {
+    data = await VodService.queryVods(c.env.DB, {
+      page, limit, typeId, year, area, wd, letter, by, order, status: 1,
+      vodClass: query.vod_class, vodLang: query.vod_lang, version: query.version, state: query.state,
+      tag: query.tag, actor: query.actor, director: query.director,
+      weekday: query.weekday !== undefined ? parseInt(query.weekday, 10) : undefined,
+    });
+  }
+  if (wd) await SearchService.record(c.env.DB, wd, data.total, searchMode).catch(() => {});
 
   return c.json({
     code: 0,
     msg: 'ok',
-    data,
+    data: { ...data, list: (await ContentTranslationService.apply(c.env.DB, 'vod', data.list, query.lang)).map((item) => sanitizeVodPublic(item)) },
   });
 });
 
@@ -123,7 +154,7 @@ apiRouter.get('/vod/filters/:typeId', async (c) => {
 apiRouter.get('/vod/banners', async (c) => {
   const limit = Math.min(20, Math.max(1, parseInt(c.req.query('limit') || '9', 10)));
   const data = await VodService.getBannerVods(c.env.DB, limit);
-  return c.json({ code: 0, msg: 'ok', data });
+  return c.json({ code: 0, msg: 'ok', data: data.map((item) => sanitizeVodPublic(item)) });
 });
 
 // 3. 影视排行榜
@@ -140,12 +171,26 @@ apiRouter.get('/vod/detail/:id', async (c) => {
     return c.json({ code: 400, msg: '无效的视频 ID' }, 400);
   }
 
-  const detail = await VodService.getVodDetail(c.env.DB, id);
+  const detail = await VodService.getVodDetail(c.env.DB, id, { publishedOnly: true, countHit: true });
   if (!detail) {
     return c.json({ code: 404, msg: '视频不存在或已下架' }, 404);
   }
 
-  return c.json({ code: 0, msg: 'ok', data: detail });
+  const protectedPlay = Number(detail.group_id || 0) > 1 || Number(detail.vod_points || 0) > 0 ||
+    Number(detail.vod_points_play || 0) > 0 || !!detail.vod_pwd || !!detail.vod_pwd_play;
+  const protectedDownload = Number(detail.group_id || 0) > 1 || Number(detail.vod_points || 0) > 0 ||
+    Number(detail.vod_points_down || 0) > 0 || !!detail.vod_pwd || !!detail.vod_pwd_down;
+  const playGroups = detail.play_groups.map((group) => ({
+    ...group,
+    urls: group.urls.map((episode) => ({ ...episode, url: protectedPlay ? '' : episode.url })),
+  }));
+  const downGroups = detail.down_groups.map((group) => ({
+    ...group,
+    urls: group.urls.map((episode) => ({ ...episode, url: protectedDownload ? '' : episode.url })),
+  }));
+  const { vod_play_url, vod_down_url, vod_pwd, vod_pwd_play, vod_pwd_down, ...safeDetail } = detail;
+  const localized = await ContentTranslationService.apply(c.env.DB, 'vod', [{ ...safeDetail, play_groups: playGroups, down_groups: downGroups }], c.req.query('lang'));
+  return c.json({ code: 0, msg: 'ok', data: localized[0] });
 });
 
 // 5. 搜索联想补全接口
@@ -153,6 +198,39 @@ apiRouter.get('/vod/suggest', async (c) => {
   const wd = c.req.query('wd') || '';
   const suggestions = await VodService.getSuggestions(c.env.DB, wd, 8);
   return c.json({ code: 0, msg: 'ok', data: suggestions });
+});
+
+// Unified public search across the content models used by MacCMS.
+apiRouter.get('/search/all', async (c) => {
+  const wd = String(c.req.query('wd') || '').trim().slice(0, 100);
+  if (wd.length < 1) return c.json({ code: 400, msg: '请输入搜索关键词' }, 400);
+  const limit = Math.min(20, Math.max(1, Number(c.req.query('limit')) || 12));
+  const pattern = `%${wd}%`;
+  const [vod, art, actors, roles, websites, manga, topics] = await Promise.all([
+    VodService.queryVods(c.env.DB, { page: 1, limit, wd, status: 1 }),
+    VodService.queryArts(c.env.DB, { page: 1, limit, wd, status: 1 }),
+    ActorService.queryActors(c.env.DB, { page: 1, limit, wd }),
+    ActorService.queryRoles(c.env.DB, { page: 1, limit, wd }),
+    WebsiteService.query(c.env.DB, { page: 1, limit, wd, status: 1 }),
+    MangaService.query(c.env.DB, { page: 1, limit, wd, status: 1 }),
+    c.env.DB.prepare(`SELECT topic_id,topic_name,topic_pic,topic_blurb,topic_time FROM topic
+      WHERE topic_status=1 AND (topic_name LIKE ? OR topic_blurb LIKE ? OR topic_content LIKE ?)
+      ORDER BY topic_level DESC,topic_sort ASC,topic_time DESC LIMIT ?`).bind(pattern, pattern, pattern, limit).all(),
+  ]);
+  const safeManga = (item: any) => {
+    const { manga_chapter_url, manga_pwd, manga_pwd_url, manga_content, ...safe } = item;
+    return safe;
+  };
+  return c.json({ code: 0, msg: 'ok', data: {
+    wd,
+    vod: { total: vod.total, list: vod.list.map((item) => sanitizeVodPublic(item)) },
+    art: { total: art.total, list: art.list.map((item) => sanitizeArtPublic(item)) },
+    actor: { total: actors.total, list: actors.list.map(({ actor_id, actor_name, actor_pic, actor_area, actor_works }) => ({ actor_id, actor_name, actor_pic, actor_area, actor_works })) },
+    role: { total: roles.total, list: roles.list.map(({ role_id, role_name, role_pic, role_actor_name, role_vod_name }) => ({ role_id, role_name, role_pic, role_actor_name, role_vod_name })) },
+    website: { total: websites.total, list: websites.list.map(({ website_id, website_name, website_logo, website_pic, website_url, type_name }) => ({ website_id, website_name, website_logo, website_pic, website_url, type_name })) },
+    manga: { total: manga.total, list: manga.list.map(safeManga) },
+    topic: { list: topics.results || [] },
+  } });
 });
 
 // 6. 顶踩与评分
@@ -179,20 +257,50 @@ apiRouter.post('/vod/check_play', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const vodId = parseInt(body.vod_id, 10);
   const nid = parseInt(body.nid || '1', 10);
-
-  // 解析会员 Token
-  const authHeader = c.req.header('Authorization') || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  let userId = 0;
-  if (token) {
-    const check = await AuthUtils.verifyToken(token, 'MACCMS_USER_SECRET');
-    if (check.valid && check.username) {
-      userId = parseInt(check.username.replace('user_', ''), 10) || 0;
-    }
+  if (!Number.isInteger(vodId) || vodId <= 0 || !Number.isInteger(nid) || nid < 1) {
+    return c.json({ code: 400, msg: '影片或集数参数无效' }, 400);
   }
 
-  const res = await UserService.checkPlayPermission(c.env.DB, userId, vodId, nid);
+  const userId = await getUserFromHeader(c);
+  const res = await UserService.checkPlayPermission(c.env.DB, userId, vodId, nid, false);
   return c.json({ code: res.canPlay ? 0 : 403, data: res });
+});
+
+// 受限播放/下载地址只在服务端完成权限检查后单集返回，详情接口不下发原始地址。
+apiRouter.post('/vod/resolve', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const vodId = Number(body.vod_id);
+  const sid = Number(body.sid);
+  const nid = Number(body.nid);
+  const mode = body.mode === 'download' ? 'download' : 'play';
+  if (![vodId, sid, nid].every(Number.isInteger) || vodId <= 0 || sid < 0 || nid < 0) {
+    return c.json({ code: 400, msg: '影片、线路或集数参数无效' }, 400);
+  }
+  const detail = await VodService.getVodDetail(c.env.DB, vodId, { publishedOnly: true });
+  if (!detail) return c.json({ code: 404, msg: '视频不存在或已下架' }, 404);
+  const groups = mode === 'download' ? detail.down_groups : detail.play_groups;
+  const group = groups[sid];
+  const episode = group?.urls[nid];
+  if (!group || !episode?.url) return c.json({ code: 404, msg: '对应线路或集数不存在' }, 404);
+
+  const requiredPassword = mode === 'download'
+    ? String(detail.vod_pwd_down || detail.vod_pwd || '')
+    : String(detail.vod_pwd_play || detail.vod_pwd || '');
+  if (requiredPassword && String(body.password || '') !== requiredPassword) {
+    return c.json({ code: 403, msg: `${mode === 'download' ? '下载' : '播放'}需要密码`, data: { password_required: true } }, 403);
+  }
+  const userId = await getUserFromHeader(c);
+  const permission = mode === 'download'
+    ? await UserService.checkDownloadPermission(c.env.DB, userId, vodId, nid + 1)
+    : await UserService.checkPlayPermission(c.env.DB, userId, vodId, nid + 1, true);
+  const canAccess = mode === 'download'
+    ? (permission as { canDownload: boolean }).canDownload
+    : (permission as { canPlay: boolean }).canPlay;
+  if (!canAccess) return c.json({ code: 403, msg: permission.reason || '当前账号没有访问权限', data: permission }, 403);
+  return c.json({ code: 0, data: {
+    mode, vod_id: vodId, sid, nid, name: episode.name, from: episode.from || group.from,
+    url: episode.url, trial_seconds: mode === 'play' ? Number((permission as { trialSeconds?: number }).trialSeconds || 0) : 0,
+  } });
 });
 
 // 8. 分类树接口
@@ -209,27 +317,99 @@ apiRouter.get('/art/list', async (c) => {
   const limit = parseInt(q.limit || '10', 10);
   const typeId = q.type_id ? parseInt(q.type_id, 10) : undefined;
   const wd = q.wd;
-  const data = await VodService.queryArts(c.env.DB, { page, limit, typeId, wd });
-  return c.json({ code: 0, msg: 'ok', data });
+  let data: Awaited<ReturnType<typeof VodService.queryArts>>;
+  let searchMode = 'sql';
+  if (wd && !typeId && await SearchService.isConfigured(c.env.DB)) {
+    try {
+      const matches = await SearchService.query(c.env.DB, 'art', wd, page, Math.min(100, Math.max(1, limit)));
+      const rows = matches.ids.length ? await c.env.DB.prepare(`SELECT a.*,t.type_name FROM art a LEFT JOIN type t ON t.type_id=a.type_id
+        WHERE a.art_status=1 AND a.art_id IN (${matches.ids.map(() => '?').join(',')})`).bind(...matches.ids).all() : { results: [] };
+      const byId = new Map((rows.results || []).map((item: any) => [Number(item.art_id), item]));
+      const list = matches.ids.map((id) => byId.get(id)).filter(Boolean) as any[];
+      data = { list, total: matches.total, page, limit, pagecount: Math.ceil(matches.total / limit) };
+      searchMode = 'meilisearch';
+    } catch (error) {
+      console.error('Meilisearch article query failed; using D1 search:', error);
+      data = await VodService.queryArts(c.env.DB, { page, limit, typeId, wd });
+    }
+  } else {
+    data = await VodService.queryArts(c.env.DB, { page, limit, typeId, wd });
+  }
+  if (wd) await SearchService.record(c.env.DB, wd, data.total, searchMode).catch(() => {});
+  const localized = await ContentTranslationService.apply(c.env.DB, 'art', data.list, q.lang);
+  return c.json({ code: 0, msg: 'ok', data: { ...data, list: localized.map((item) => sanitizeArtPublic(item)) } });
 });
 
 apiRouter.get('/art/detail/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
-  const data = await VodService.getArtDetail(c.env.DB, id);
+  const data = await VodService.getArtDetail(c.env.DB, id, true);
   if (!data) return c.json({ code: 404, msg: '文章不存在' }, 404);
-  return c.json({ code: 0, msg: 'ok', data });
+  const localized = (await ContentTranslationService.apply(c.env.DB, 'art', [data], c.req.query('lang')))[0];
+  const locked = Number(localized.group_id || 0) > 1 || Number(localized.art_points || 0) > 0 || !!localized.art_pwd;
+  const safe = sanitizeArtPublic(localized, !locked);
+  if (locked) safe.art_content = '';
+  return c.json({ code: 0, msg: 'ok', data: { ...safe, access_locked: locked, password_required: !!data.art_pwd } });
+});
+
+apiRouter.post('/art/access/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '文章 ID 无效' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const permission = await UserService.checkArticlePermission(c.env.DB, await getUserFromHeader(c), id, String(body.password || ''), true);
+  if (!permission.canRead) return c.json({ code: 403, msg: permission.reason || '当前账号无权阅读', data: permission }, 403);
+  const article = await VodService.getArtDetail(c.env.DB, id, true);
+  if (!article) return c.json({ code: 404, msg: '文章不存在或已下架' }, 404);
+  const localized = (await ContentTranslationService.apply(c.env.DB, 'art', [article], String(body.lang || c.req.query('lang') || '')))[0];
+  return c.json({ code: 0, msg: 'ok', data: sanitizeArtPublic(localized, true) });
 });
 
 // 10. 影视专题接口
 apiRouter.get('/topic/list', async (c) => {
   const data = await VodService.queryTopics(c.env.DB);
-  return c.json({ code: 0, msg: 'ok', data });
+  return c.json({ code: 0, msg: 'ok', data: await ContentTranslationService.apply(c.env.DB, 'topic', data, c.req.query('lang')) });
 });
 
 apiRouter.get('/topic/detail/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
-  const data = await VodService.getTopicDetail(c.env.DB, id);
+  const data = await VodService.getTopicDetail(c.env.DB, id, true);
   if (!data) return c.json({ code: 404, msg: '专题不存在' }, 404);
+  const localized = (await ContentTranslationService.apply(c.env.DB, 'topic', [data], c.req.query('lang')))[0];
+  localized.vods = await ContentTranslationService.apply(c.env.DB, 'vod', localized.vods || [], c.req.query('lang'));
+  return c.json({ code: 0, msg: 'ok', data: localized });
+});
+
+// MacCMS 分集剧情模块：只返回已发布且启用了剧情字段的视频。
+const plotListHandler = async (c: any) => {
+  const q = c.req.query();
+  const data = await VodService.queryVods(c.env.DB, {
+    page: parseInt(q.page || '1', 10),
+    limit: parseInt(q.limit || '20', 10),
+    typeId: q.type_id ? parseInt(q.type_id, 10) : undefined,
+    year: q.year,
+    area: q.area,
+    letter: q.letter,
+    wd: q.wd,
+    by: q.by,
+    order: q.order,
+    plotOnly: true,
+  });
+  const list = data.list.map((vod) => ({
+    ...sanitizeVodPublic(vod, true),
+    plot_count: String(vod.vod_plot_name || '').split('$$$').filter((name) => name.trim()).length,
+  }));
+  return c.json({ code: 0, msg: 'ok', data: { ...data, list: await ContentTranslationService.apply(c.env.DB, 'vod', list, q.lang) } });
+};
+
+apiRouter.get('/plot/list', plotListHandler);
+apiRouter.get('/plot/index', plotListHandler);
+apiRouter.get('/plot/search', plotListHandler);
+
+apiRouter.get('/plot/detail/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '无效的视频 ID' }, 400);
+  const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
+  const data = await VodService.getPlotDetail(c.env.DB, id, page);
+  if (!data) return c.json({ code: 404, msg: '分集剧情不存在' }, 404);
   return c.json({ code: 0, msg: 'ok', data });
 });
 
@@ -242,25 +422,46 @@ apiRouter.get('/actor/list', async (c) => {
   const wd = q.wd;
   const area = q.area;
   const data = await ActorService.queryActors(c.env.DB, { page, limit, letter, wd, area });
-  return c.json({ code: 0, msg: 'ok', data });
+  return c.json({ code: 0, msg: 'ok', data: { ...data, list: await ContentTranslationService.apply(c.env.DB, 'actor', data.list, q.lang) } });
 });
 
 apiRouter.get('/actor/detail/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   const data = await ActorService.getActorDetail(c.env.DB, id);
   if (!data) return c.json({ code: 404, msg: '明星信息不存在' }, 404);
-  return c.json({ code: 0, msg: 'ok', data });
+  const language = c.req.query('lang');
+  const localized = (await ContentTranslationService.apply(c.env.DB, 'actor', [data], language))[0];
+  localized.vods = await ContentTranslationService.apply(c.env.DB, 'vod', localized.vods || [], language);
+  localized.roles = await ContentTranslationService.apply(c.env.DB, 'role', localized.roles || [], language);
+  return c.json({ code: 0, msg: 'ok', data: localized });
 });
 
-apiRouter.get('/role/list', async (c) => {
+const roleListHandler = async (c: any) => {
   const q = c.req.query();
   const page = parseInt(q.page || '1', 10);
   const limit = parseInt(q.limit || '20', 10);
   const vodId = q.vod_id ? parseInt(q.vod_id, 10) : undefined;
   const actorId = q.actor_id ? parseInt(q.actor_id, 10) : undefined;
+  const typeId = q.type_id ? parseInt(q.type_id, 10) : undefined;
   const wd = q.wd;
-  const data = await ActorService.queryRoles(c.env.DB, { page, limit, vodId, actorId, wd });
-  return c.json({ code: 0, msg: 'ok', data });
+  const data = await ActorService.queryRoles(c.env.DB, { page, limit, vodId, actorId, typeId, letter: q.letter, area: q.area, wd });
+  return c.json({ code: 0, msg: 'ok', data: { ...data, list: await ContentTranslationService.apply(c.env.DB, 'role', data.list, q.lang) } });
+};
+apiRouter.get('/role/list', roleListHandler);
+apiRouter.get('/role/index', roleListHandler);
+apiRouter.get('/role/show', roleListHandler);
+apiRouter.get('/role/search', roleListHandler);
+
+apiRouter.get('/role/detail/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '无效的角色 ID' }, 400);
+  const data = await ActorService.getRoleDetail(c.env.DB, id);
+  if (!data) return c.json({ code: 404, msg: '角色不存在或已下架' }, 404);
+  const language = c.req.query('lang');
+  const localized = (await ContentTranslationService.apply(c.env.DB, 'role', [data], language))[0];
+  if (localized.actor) localized.actor = (await ContentTranslationService.apply(c.env.DB, 'actor', [localized.actor], language))[0];
+  if (localized.vod) localized.vod = (await ContentTranslationService.apply(c.env.DB, 'vod', [localized.vod], language))[0];
+  return c.json({ code: 0, msg: 'ok', data: localized });
 });
 
 // 12. 留言与报错接口
@@ -372,7 +573,7 @@ apiRouter.get('/website/list', async (c) => {
     status: 1,
   });
   const types = await VodService.getTypes(c.env.DB, 11);
-  return c.json({ code: 0, msg: 'ok', data: { ...data, types } });
+  return c.json({ code: 0, msg: 'ok', data: { ...data, list: await ContentTranslationService.apply(c.env.DB, 'website', data.list, q.lang), types } });
 });
 
 apiRouter.get('/website/detail/:id', async (c) => {
@@ -380,7 +581,7 @@ apiRouter.get('/website/detail/:id', async (c) => {
   if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '无效的网址 ID' }, 400);
   const item = await WebsiteService.get(c.env.DB, id);
   if (!item || item.website_status !== 1) return c.json({ code: 404, msg: '网址不存在或已隐藏' }, 404);
-  return c.json({ code: 0, msg: 'ok', data: item });
+  return c.json({ code: 0, msg: 'ok', data: (await ContentTranslationService.apply(c.env.DB, 'website', [item], c.req.query('lang')))[0] });
 });
 
 apiRouter.get('/website/go/:id', async (c) => {
@@ -422,12 +623,19 @@ apiRouter.post('/user/register', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   try {
     const ip = c.req.header('CF-Connecting-IP') || '';
+    if (!await consumeRateLimit(c.env.DB, `register:${ip || 'unknown'}`, 8, 3600)) return c.json({ code: 429, msg: '注册请求过于频繁，请稍后重试' }, 429);
+    if (configs.user_email_required === '1' && !String(body.email || '').trim()) return c.json({ code: 400, msg: '请填写邮箱后注册' }, 400);
     const blocked = await c.env.DB.prepare(`SELECT reason FROM user_access_rule WHERE
       ((rule_type='ip' AND rule_value=?) OR (rule_type='username' AND lower(rule_value)=lower(?)))
       AND (expires_at=0 OR expires_at>?) LIMIT 1`).bind(ip, String(body.username || '').trim(), Math.floor(Date.now() / 1000)).first<{ reason: string }>();
     if (blocked) return c.json({ code: 403, msg: blocked.reason || '当前来源不可注册' }, 403);
     const user = await UserService.register(c.env.DB, body, ip);
-    const token = await AuthUtils.generateToken(`user_${user.user_id}`, 'MACCMS_USER_SECRET', 30);
+    if (configs.user_email_required === '1') {
+      await MemberSecurityService.issueCode(c.env, user.user_id, String(body.email || ''), 'verify', ip);
+      return c.json({ code: 0, msg: '注册成功，验证码已发送到邮箱；验证后即可登录', data: { requires_email_verification: true } });
+    }
+    const tokenSecret = await UserService.getTokenSecret(c.env.DB, c.env.JWT_SECRET || '');
+    const token = await UserService.createUserSession(c.env.DB, user.user_id, tokenSecret, ip, c.req.header('User-Agent') || '');
     return c.json({ code: 0, msg: '注册成功', data: { user, token } });
   } catch (err) {
     return c.json({ code: 400, msg: (err as Error).message }, 400);
@@ -438,27 +646,200 @@ apiRouter.post('/user/login', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   try {
     const ip = c.req.header('CF-Connecting-IP') || '';
-    const candidate = await c.env.DB.prepare('SELECT user_id FROM user WHERE user_name=?').bind(String(body.username || '').trim()).first<{ user_id: number }>();
+    const username = String(body.username || '').trim();
+    if (!await consumeRateLimit(c.env.DB, `login:ip:${ip || 'unknown'}`, 20, 900)
+      || !await consumeRateLimit(c.env.DB, `login:user:${username.toLowerCase()}`, 10, 900)) {
+      return c.json({ code: 429, msg: '登录尝试过于频繁，请 15 分钟后重试' }, 429);
+    }
+    const candidate = await c.env.DB.prepare('SELECT user_id FROM user WHERE user_name=?').bind(username).first<{ user_id: number }>();
     const blocked = await c.env.DB.prepare(`SELECT reason FROM user_access_rule WHERE
       ((rule_type='ip' AND rule_value=?) OR (rule_type='username' AND lower(rule_value)=lower(?)) OR (rule_type='user_id' AND rule_value=?))
       AND (expires_at=0 OR expires_at>?) LIMIT 1`).bind(ip, String(body.username || '').trim(), String(candidate?.user_id || ''), Math.floor(Date.now() / 1000)).first<{ reason: string }>();
     if (blocked) return c.json({ code: 403, msg: blocked.reason || '当前来源不可登录' }, 403);
-    const data = await UserService.login(c.env.DB, body.username, body.password, ip);
+    const tokenSecret = await UserService.getTokenSecret(c.env.DB, c.env.JWT_SECRET || '');
+    const data = await UserService.login(c.env.DB, body.username, body.password, ip, tokenSecret, c.req.header('User-Agent') || '');
+    await Promise.all([
+      clearRateLimit(c.env.DB, `login:ip:${ip || 'unknown'}`),
+      clearRateLimit(c.env.DB, `login:user:${username.toLowerCase()}`),
+    ]);
+    const configs = await VodService.getConfigs(c.env.DB);
+    if (configs.user_email_required === '1' && Number((data.user as any).user_email_verified || 0) !== 1) {
+      await c.env.DB.prepare('UPDATE user_session SET revoked_at=? WHERE user_id=? AND revoked_at=0')
+        .bind(Math.floor(Date.now() / 1000), data.user.user_id).run();
+      return c.json({ code: 403, msg: '请先完成邮箱验证；可重新填写账号密码发送验证邮件' }, 403);
+    }
     return c.json({ code: 0, msg: '登录成功', data });
   } catch (err) {
     return c.json({ code: 400, msg: (err as Error).message }, 400);
   }
 });
 
+apiRouter.post('/user/email/verification/send', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ip = c.req.header('CF-Connecting-IP') || '';
+  const email = String(body.email || '').trim().toLowerCase();
+  const username = String(body.username || '').trim();
+  const password = String(body.password || '');
+  const userId = await getUserFromHeader(c);
+  try {
+    const settings = await VodService.getConfigs(c.env.DB);
+    if (settings.user_email_required !== '1' && settings.user_email_verification !== '1') return c.json({ code: 403, msg: '邮箱验证入口暂未开放' }, 403);
+    let targetUserId = userId;
+    if (!targetUserId) {
+      const account = await c.env.DB.prepare('SELECT user_id,user_pwd,user_email FROM user WHERE user_name=? AND user_status=1 LIMIT 1')
+        .bind(username).first<{ user_id: number; user_pwd: string; user_email: string }>();
+      if (!account || !await AuthUtils.verifyPassword(password, account.user_pwd)) return c.json({ code: 400, msg: '账号或密码错误' }, 400);
+      targetUserId = account.user_id;
+      if (email && email !== account.user_email.trim().toLowerCase()) return c.json({ code: 400, msg: '邮箱与账号绑定邮箱不一致' }, 400);
+    }
+    const target = await c.env.DB.prepare('SELECT user_email,user_email_verified FROM user WHERE user_id=? AND user_status=1')
+      .bind(targetUserId).first<{ user_email: string; user_email_verified: number }>();
+    if (!target?.user_email) return c.json({ code: 400, msg: '请先在会员资料中填写邮箱' }, 400);
+    if (Number(target.user_email_verified) === 1) return c.json({ code: 0, msg: '邮箱已验证' });
+    await MemberSecurityService.issueCode(c.env, targetUserId, target.user_email, 'verify', ip);
+    return c.json({ code: 0, msg: '验证邮件已发送' });
+  } catch (error) {
+    return c.json({ code: 400, msg: error instanceof Error ? error.message : '邮件发送失败' }, 400);
+  }
+});
+
+apiRouter.post('/user/email/verification/confirm', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const userId = await getUserFromHeader(c);
+  const email = String(body.email || '').trim().toLowerCase();
+  const code = String(body.code || '').trim();
+  try {
+    const settings = await VodService.getConfigs(c.env.DB);
+    if (settings.user_email_required !== '1' && settings.user_email_verification !== '1') return c.json({ code: 403, msg: '邮箱验证入口暂未开放' }, 403);
+    if (userId) {
+      const current = await c.env.DB.prepare('SELECT user_email FROM user WHERE user_id=? AND user_status=1')
+        .bind(userId).first<{ user_email: string }>();
+      if (!current || current.user_email.trim().toLowerCase() !== email) return c.json({ code: 400, msg: '邮箱与当前账号不匹配' }, 400);
+    }
+    const verified = await MemberSecurityService.verifyEmail(c.env.DB, email, code);
+    return verified ? c.json({ code: 0, msg: '邮箱验证成功' }) : c.json({ code: 400, msg: '验证码无效或已过期' }, 400);
+  } catch (error) {
+    return c.json({ code: 400, msg: error instanceof Error ? error.message : '验证失败' }, 400);
+  }
+});
+
+apiRouter.post('/user/password/reset/send', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const email = String(body.email || '').trim().toLowerCase();
+  const ip = c.req.header('CF-Connecting-IP') || '';
+  if (!await consumeRateLimit(c.env.DB, `password-reset:${ip || 'unknown'}`, 8, 3600)) return c.json({ code: 429, msg: '请求过于频繁，请稍后重试' }, 429);
+  try {
+    if (MemberSecurityService.validEmail(email)) {
+      const user = await c.env.DB.prepare('SELECT user_id FROM user WHERE lower(user_email)=? AND user_status=1 LIMIT 1')
+        .bind(email).first<{ user_id: number }>();
+      if (user) await MemberSecurityService.issueCode(c.env, user.user_id, email, 'reset', ip);
+    }
+    return c.json({ code: 0, msg: '如果该邮箱已绑定本站账号，验证码将发送到邮箱' });
+  } catch (error) {
+    // Keep reset responses non-enumerable while still reporting delivery configuration failures.
+    console.error('Password reset email delivery failed:', error);
+    return c.json({ code: 0, msg: '如果该邮箱已绑定本站账号，验证码将发送到邮箱' });
+  }
+});
+
+apiRouter.post('/user/password/reset/confirm', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    await MemberSecurityService.resetPassword(c.env, String(body.email || ''), String(body.code || ''), String(body.new_password || ''));
+    return c.json({ code: 0, msg: '密码已重置，请重新登录' });
+  } catch (error) {
+    return c.json({ code: 400, msg: error instanceof Error ? error.message : '密码重置失败' }, 400);
+  }
+});
+
 // 获取当前登录用户画像中间件辅助函数
-const getUserFromHeader = async (c: any): Promise<number> => {
+const getUserSessionFromHeader = async (c: any): Promise<{ userId: number; sessionId: string }> => {
   const authHeader = c.req.header('Authorization') || '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!token) return 0;
-  const check = await AuthUtils.verifyToken(token, 'MACCMS_USER_SECRET');
-  if (!check.valid || !check.username) return 0;
-  return parseInt(check.username.replace('user_', ''), 10) || 0;
+  if (!token) return { userId: 0, sessionId: '' };
+  const secret = await UserService.getTokenSecret(c.env.DB, c.env.JWT_SECRET || '');
+  const check = await AuthUtils.verifyToken(token, secret);
+  const userId = check.valid && check.username ? parseInt(check.username.replace('user_', ''), 10) || 0 : 0;
+  const sessionId = check.sessionId || '';
+  if (!userId || !sessionId) return { userId: 0, sessionId: '' };
+  const active = await c.env.DB.prepare(`SELECT session_id FROM user_session
+    WHERE session_id=? AND user_id=? AND revoked_at=0 AND expires_at>? LIMIT 1`)
+    .bind(sessionId, userId, Math.floor(Date.now() / 1000)).first();
+  return active ? { userId, sessionId } : { userId: 0, sessionId: '' };
 };
+
+const getUserFromHeader = async (c: any): Promise<number> => {
+  return (await getUserSessionFromHeader(c)).userId;
+};
+
+apiRouter.get('/user/invite', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  let code = await c.env.DB.prepare('SELECT invite_code FROM user_invite_code WHERE user_id=?').bind(userId).first<{ invite_code: string }>();
+  if (!code) {
+    for (let attempt = 0; attempt < 4 && !code; attempt += 1) {
+      const candidate = crypto.randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
+      await c.env.DB.prepare('INSERT OR IGNORE INTO user_invite_code (user_id,invite_code,created_at) VALUES (?,?,?)')
+        .bind(userId, candidate, Math.floor(Date.now() / 1000)).run();
+      code = await c.env.DB.prepare('SELECT invite_code FROM user_invite_code WHERE user_id=?').bind(userId).first<{ invite_code: string }>();
+    }
+  }
+  if (!code) return c.json({ code: 500, msg: '邀请码暂时不可用' }, 500);
+  const [configRows, totals, invites] = await Promise.all([
+    c.env.DB.prepare(`SELECT key,value FROM config WHERE key IN ('user_invite_status','user_invite_points','user_invited_points')`).all<{ key: string; value: string }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS invite_count,COALESCE(SUM(inviter_points),0) AS earned_points
+      FROM user_invite_reward WHERE inviter_user_id=?`).bind(userId).first<{ invite_count: number; earned_points: number }>(),
+    c.env.DB.prepare(`SELECT r.invitee_user_id,r.inviter_points,r.invitee_points,r.created_at,u.user_name
+      FROM user_invite_reward r JOIN user u ON u.user_id=r.invitee_user_id
+      WHERE r.inviter_user_id=? ORDER BY r.created_at DESC LIMIT 20`).bind(userId).all(),
+  ]);
+  const settings: Record<string, string> = {};
+  for (const row of configRows.results || []) settings[row.key] = row.value;
+  const inviteCode = code.invite_code;
+  return c.json({ code: 0, data: {
+    enabled: settings.user_invite_status === '1', invite_code: inviteCode,
+    invite_url: `${new URL(c.req.url).origin}/user.html?invite=${encodeURIComponent(inviteCode)}`,
+    inviter_points: Number(settings.user_invite_points || 50), invited_points: Number(settings.user_invited_points || 0),
+    invite_count: totals?.invite_count || 0, earned_points: totals?.earned_points || 0, list: invites.results || [],
+  } });
+});
+
+apiRouter.get('/user/sessions', async (c) => {
+  const current = await getUserSessionFromHeader(c);
+  if (!current.userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const rows = await c.env.DB.prepare(`SELECT session_id,created_at,last_seen_at,expires_at,user_agent
+    FROM user_session WHERE user_id=? AND revoked_at=0 AND expires_at>? ORDER BY last_seen_at DESC LIMIT 30`)
+    .bind(current.userId, Math.floor(Date.now() / 1000)).all();
+  return c.json({ code: 0, data: (rows.results || []).map((row: any) => ({ ...row, is_current: row.session_id === current.sessionId })) });
+});
+
+apiRouter.post('/user/sessions/revoke-others', async (c) => {
+  const current = await getUserSessionFromHeader(c);
+  if (!current.userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const result = await c.env.DB.prepare(`UPDATE user_session SET revoked_at=?
+    WHERE user_id=? AND session_id<>? AND revoked_at=0 AND expires_at>?`)
+    .bind(Math.floor(Date.now() / 1000), current.userId, current.sessionId, Math.floor(Date.now() / 1000)).run();
+  return c.json({ code: 0, msg: '其他设备已退出', data: { revoked: result.meta.changes || 0 } });
+});
+
+apiRouter.post('/user/sessions/:sessionId/revoke', async (c) => {
+  const current = await getUserSessionFromHeader(c);
+  if (!current.userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const sessionId = c.req.param('sessionId');
+  const result = await c.env.DB.prepare(`UPDATE user_session SET revoked_at=?
+    WHERE user_id=? AND session_id=? AND revoked_at=0`)
+    .bind(Math.floor(Date.now() / 1000), current.userId, sessionId).run();
+  if (!result.meta.changes) return c.json({ code: 404, msg: '设备会话不存在或已退出' }, 404);
+  return c.json({ code: 0, msg: '该设备已退出' });
+});
+
+apiRouter.post('/user/logout', async (c) => {
+  const current = await getUserSessionFromHeader(c);
+  if (!current.userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  await c.env.DB.prepare('UPDATE user_session SET revoked_at=? WHERE user_id=? AND session_id=? AND revoked_at=0')
+    .bind(Math.floor(Date.now() / 1000), current.userId, current.sessionId).run();
+  return c.json({ code: 0, msg: '已退出当前设备' });
+});
 
 apiRouter.get('/manga/list', async (c) => {
   const q = c.req.query();
@@ -469,7 +850,7 @@ apiRouter.get('/manga/list', async (c) => {
     const { manga_chapter_url, manga_pwd, manga_pwd_url, manga_content, ...safe } = item as any;
     return { ...safe, chapter_count: (manga_chapter_url || '').split('$$$').join('#').split('#').filter(Boolean).length };
   });
-  return c.json({ code: 0, data: { ...result, list, types } });
+  return c.json({ code: 0, data: { ...result, list: await ContentTranslationService.apply(c.env.DB, 'manga', list, q.lang), types } });
 });
 
 apiRouter.get('/manga/detail/:id', async (c) => {
@@ -478,7 +859,8 @@ apiRouter.get('/manga/detail/:id', async (c) => {
   if (!item || item.manga_status !== 1 || Number((item as any).manga_recycle_time) > 0) return c.json({ code: 404, msg: '漫画不存在或已下架' }, 404);
   const { manga_chapter_url, manga_pwd, manga_pwd_url, ...safe } = item as any;
   const chapterCount = String(manga_chapter_url || '').split('$$$').join('#').split('#').filter(Boolean).length;
-  return c.json({ code: 0, data: { ...safe, chapter_count: chapterCount } });
+  const localized = (await ContentTranslationService.apply(c.env.DB, 'manga', [{ ...safe, chapter_count: chapterCount }], c.req.query('lang')))[0];
+  return c.json({ code: 0, data: localized });
 });
 
 apiRouter.get('/manga/chapters/:id', async (c) => {
@@ -549,7 +931,113 @@ apiRouter.get('/user/profile', async (c) => {
   const userId = await getUserFromHeader(c);
   if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
   const user = await UserService.getUserProfile(c.env.DB, userId);
-  return c.json({ code: 0, msg: 'ok', data: user });
+  if (!user || user.user_status !== 1) return c.json({ code: 401, msg: '账号不存在或已停用' }, 401);
+  const { user_login_ip, user_last_login_ip, user_pwd, ...safeUser } = user as any;
+  return c.json({ code: 0, msg: 'ok', data: safeUser });
+});
+
+apiRouter.post('/user/profile', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    const user = await UserService.updateProfile(c.env.DB, userId, body);
+    const { user_login_ip, user_last_login_ip, user_pwd, ...safeUser } = user as any;
+    return c.json({ code: 0, msg: '资料已保存', data: safeUser });
+  } catch (err) {
+    return c.json({ code: 400, msg: (err as Error).message }, 400);
+  }
+});
+
+apiRouter.post('/user/avatar', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const bucket = c.env.MEDIA_BUCKET;
+  const storage = await loadMediaStorageConfig(c.env.DB);
+  if (storage.provider === 'r2' && !bucket) return c.json({ code: 503, msg: '头像存储未配置，请绑定 R2 媒体桶或切换到其他附件后端' }, 503);
+  let form: FormData;
+  try { form = await c.req.formData(); } catch { return c.json({ code: 400, msg: '请上传图片文件' }, 400); }
+  const file = form.get('avatar');
+  if (!(file instanceof File)) return c.json({ code: 400, msg: '请上传图片文件' }, 400);
+  if (file.size <= 0 || file.size > 2 * 1024 * 1024) return c.json({ code: 400, msg: '图片大小须在 1 字节到 2 MB 之间' }, 400);
+
+  const imageTypes: Record<string, { ext: string; signature(bytes: Uint8Array): boolean }> = {
+    'image/jpeg': { ext: 'jpg', signature: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+    'image/png': { ext: 'png', signature: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+    'image/gif': { ext: 'gif', signature: (b) => b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 },
+    'image/webp': { ext: 'webp', signature: (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 },
+  };
+  const format = imageTypes[file.type];
+  if (!format) return c.json({ code: 400, msg: '仅支持 JPG、PNG、GIF、WebP 图片' }, 400);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!format.signature(bytes)) return c.json({ code: 400, msg: '图片内容与文件类型不匹配' }, 400);
+  const user = await c.env.DB.prepare('SELECT user_name,user_pic FROM user WHERE user_id=? AND user_status=1')
+    .bind(userId).first<{ user_name: string; user_pic: string }>();
+  if (!user) return c.json({ code: 401, msg: '账号不存在或已停用' }, 401);
+  const origin = new URL(c.req.url).origin;
+  let key = '';
+  let providerRef = '';
+  let publicUrl = '';
+  let mediaId = 0;
+  try {
+    if (storage.provider === 'telegraph') {
+      publicUrl = await uploadToTelegraph(storage, new Blob([bytes], { type: file.type }), file.name || `avatar.${format.ext}`, file.type);
+      key = `telegraph:${crypto.randomUUID()}`;
+    } else if (storage.provider === 'telegram') {
+      const uploaded = await uploadToTelegram(c.env.DB, storage, new Blob([bytes], { type: file.type }), file.name || `avatar.${format.ext}`, file.type, origin);
+      key = uploaded.objectKey;
+      providerRef = uploaded.providerRef;
+      publicUrl = uploaded.publicUrl;
+    } else {
+      key = `user-avatars/${userId}/${Date.now()}-${crypto.randomUUID()}.${format.ext}`;
+      publicUrl = `${origin}/media/${key}`;
+      await bucket!.put(key, bytes, { httpMetadata: { contentType: file.type, cacheControl: 'public, max-age=31536000, immutable' } });
+    }
+    const inserted = await c.env.DB.prepare(`INSERT INTO media_asset (object_key,storage_provider,provider_ref,file_name,content_type,file_size,public_url,created_by,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?)`).bind(key, storage.provider, providerRef, file.name.slice(0, 240) || `avatar.${format.ext}`, file.type, file.size,
+      publicUrl, user.user_name, Math.floor(Date.now() / 1000)).run();
+    mediaId = Number(inserted.meta.last_row_id || 0);
+    const updated = await c.env.DB.prepare('UPDATE user SET user_pic=? WHERE user_id=? AND user_status=1')
+      .bind(publicUrl, userId).run();
+    if (Number(updated.meta.changes || 0) !== 1) throw new Error('账号状态已变化，头像未保存');
+  } catch (err) {
+    if (mediaId) await c.env.DB.prepare('DELETE FROM media_asset WHERE media_id=?').bind(mediaId).run().catch(() => {});
+    if (key) await deleteStoredMedia(storage.provider, bucket, storage, key, publicUrl).catch(() => {});
+    console.error('Member avatar upload failed:', err);
+    return c.json({ code: 500, msg: '头像上传失败，请稍后重试' }, 500);
+  }
+
+  const oldAvatar = String(user.user_pic || '');
+  if (oldAvatar && oldAvatar !== publicUrl) {
+    const absoluteOld = new URL(oldAvatar, origin).toString();
+    const oldAsset = await c.env.DB.prepare('SELECT media_id,object_key,storage_provider,public_url FROM media_asset WHERE public_url IN (?,?) AND media_id<>? LIMIT 1')
+      .bind(oldAvatar, absoluteOld, mediaId).first<{ media_id: number; object_key: string; storage_provider: string; public_url: string }>();
+    if (oldAsset) {
+      const references = await c.env.DB.prepare('SELECT COUNT(*) AS c FROM user WHERE user_id<>? AND (instr(user_pic,?)>0 OR instr(user_pic,?)>0)')
+        .bind(userId, oldAsset.public_url, oldAvatar).first<{ c: number }>();
+      if (!(references?.c || 0)) {
+        try {
+          await deleteStoredMedia(oldAsset.storage_provider, bucket, storage, oldAsset.object_key, oldAsset.public_url);
+          await c.env.DB.prepare('DELETE FROM media_asset WHERE media_id=?').bind(oldAsset.media_id).run();
+        } catch { /* Keep the old media record available for manual cleanup if its provider rejects deletion. */ }
+      }
+    } else if (storage.provider === 'r2' && oldAvatar.startsWith(`/media/user-avatars/${userId}/`)) {
+      await bucket?.delete(oldAvatar.slice('/media/'.length)).catch(() => {});
+    }
+  }
+  return c.json({ code: 0, msg: '头像已更新', data: { user_pic: publicUrl } });
+});
+
+apiRouter.post('/user/password/change', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    await UserService.changePassword(c.env.DB, userId, String(body.current_password || ''), String(body.new_password || ''));
+    return c.json({ code: 0, msg: '密码已修改' });
+  } catch (err) {
+    return c.json({ code: 400, msg: (err as Error).message }, 400);
+  }
 });
 
 apiRouter.post('/user/redeem_card', async (c) => {
@@ -598,6 +1086,47 @@ apiRouter.post('/user/history', async (c) => {
   return c.json({ code: 0, msg: 'ok' });
 });
 
+apiRouter.get('/user/progress', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 30));
+  const rows = await c.env.DB.prepare(`SELECT p.vod_id,p.play_sid,p.play_nid,p.episode_name,p.position_seconds,
+    p.duration_seconds,p.updated_at,v.vod_name,v.vod_pic,v.vod_remarks
+    FROM user_play_progress p JOIN vod v ON v.vod_id=p.vod_id
+    WHERE p.user_id=? AND v.vod_status=1 ORDER BY p.updated_at DESC LIMIT ?`).bind(userId, limit).all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+apiRouter.post('/user/progress', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const vodId = Number(body.vod_id);
+  const sid = Number(body.sid || 0);
+  const nid = Number(body.nid || 0);
+  const position = Math.floor(Number(body.position_seconds ?? body.time));
+  const duration = Math.floor(Number(body.duration_seconds ?? body.duration));
+  if (![vodId, sid, nid, position, duration].every(Number.isInteger) || vodId <= 0 || sid < 0 || nid < 0 || position < 0 || duration < 0 || position > 604800 || duration > 604800) {
+    return c.json({ code: 400, msg: '播放进度参数无效' }, 400);
+  }
+  const episodeName = String(body.episode_name || body.ep_name || '').trim().slice(0, 120);
+  const now = Math.floor(Date.now() / 1000);
+  const vod = await c.env.DB.prepare('SELECT vod_id FROM vod WHERE vod_id=? AND vod_status=1').bind(vodId).first();
+  if (!vod) return c.json({ code: 404, msg: '视频不存在或已下架' }, 404);
+  if (duration > 0 && position >= duration - 10) {
+    await c.env.DB.prepare('DELETE FROM user_play_progress WHERE user_id=? AND vod_id=? AND play_sid=? AND play_nid=?')
+      .bind(userId, vodId, sid, nid).run();
+    return c.json({ code: 0, msg: '已记录播放完成', data: { completed: true } });
+  }
+  await c.env.DB.prepare(`INSERT INTO user_play_progress
+    (user_id,vod_id,play_sid,play_nid,episode_name,position_seconds,duration_seconds,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,vod_id,play_sid,play_nid) DO UPDATE SET
+      episode_name=excluded.episode_name,position_seconds=excluded.position_seconds,
+      duration_seconds=excluded.duration_seconds,updated_at=excluded.updated_at`)
+    .bind(userId, vodId, sid, nid, episodeName, position, duration, now, now).run();
+  return c.json({ code: 0, msg: '播放进度已保存', data: { completed: false, position_seconds: position } });
+});
+
 apiRouter.get('/user/favs', async (c) => {
   const userId = await getUserFromHeader(c);
   if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
@@ -627,9 +1156,14 @@ apiRouter.post('/user/follows/toggle', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const model = body.model ? String(body.model) : '';
   const midByModel: Record<string, number> = { vod: 1, art: 2, topic: 3, actor: 8, manga: 12, website: 11 };
-  const mid = midByModel[model] || Number(body.mid);
+  const mid = model === 'user' ? 0 : (midByModel[model] ?? Number(body.mid));
   const rid = Number(body.id || body.rid);
-  if (!Number.isInteger(mid) || mid <= 0 || !Number.isInteger(rid) || rid <= 0 || mid > 20) return c.json({ code: 400, msg: '关注目标无效' }, 400);
+  if (!Number.isInteger(mid) || mid < 0 || !Number.isInteger(rid) || rid <= 0 || mid > 20) return c.json({ code: 400, msg: '关注目标无效' }, 400);
+  if (mid === 0) {
+    if (rid === userId) return c.json({ code: 400, msg: '不能关注自己' }, 400);
+    const target = await c.env.DB.prepare('SELECT user_id FROM user WHERE user_id=? AND user_status=1').bind(rid).first();
+    if (!target) return c.json({ code: 404, msg: '会员不存在或已停用' }, 404);
+  }
   const existing = await c.env.DB.prepare('SELECT follow_id FROM user_follow WHERE user_id=? AND follow_mid=? AND follow_rid=?').bind(userId, mid, rid).first<{ follow_id: number }>();
   if (existing) {
     await c.env.DB.prepare('DELETE FROM user_follow WHERE follow_id=?').bind(existing.follow_id).run();
@@ -728,6 +1262,211 @@ apiRouter.post('/user/coupons/redeem', async (c) => {
   ]);
   if (!claim[0]?.meta.changes) return c.json({ code: 409, msg: '优惠码已领取或名额已用完' }, 409);
   return c.json({ code: 0, msg: '优惠券已领取', data: { coupon_id: coupon.coupon_id, coupon_name: coupon.coupon_name } });
+});
+
+apiRouter.get('/user/payment/plans', async (c) => {
+  try {
+    const configs = await VodService.getConfigs(c.env.DB);
+    const enabled = Boolean(configs.payment_checkout_url && configs.payment_merchant_id && configs.payment_secret);
+    const plans = enabled ? await PaymentService.plans(c.env.DB) : [];
+    return c.json({ code: 0, data: { enabled, plans } });
+  } catch (error) {
+    return c.json({ code: 500, msg: error instanceof Error ? error.message : '支付套餐读取失败' }, 500);
+  }
+});
+
+apiRouter.post('/user/payment/create', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    const payment = await PaymentService.create(c.env, userId, String(body.plan_code || ''), new URL(c.req.url).origin);
+    return c.json({ code: 0, msg: '订单已创建，请完成支付', data: payment });
+  } catch (error) {
+    return c.json({ code: 400, msg: error instanceof Error ? error.message : '创建支付订单失败' }, 400);
+  }
+});
+
+apiRouter.get('/user/payments', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const rows = await c.env.DB.prepare(`SELECT order_code,product_type,product_value,amount_cents,status,created_at,expires_at,paid_at
+    FROM payment_intent WHERE user_id=? ORDER BY created_at DESC LIMIT 30`).bind(userId).all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+apiRouter.get('/user/feed', async (c) => {
+  const userId = await getUserFromHeader(c);
+  const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 20));
+  const rows = await c.env.DB.prepare(`SELECT p.post_id,p.user_id,u.user_nick,u.user_name,p.content,p.visibility,p.created_at,
+      (SELECT COUNT(*) FROM user_post_like l WHERE l.post_id=p.post_id) AS like_count,
+      EXISTS(SELECT 1 FROM user_post_like l WHERE l.post_id=p.post_id AND l.user_id=?) AS liked
+    FROM user_post p JOIN user u ON u.user_id=p.user_id
+    WHERE p.status=1 AND (p.visibility='public' OR p.user_id=? OR (p.visibility='followers' AND EXISTS(
+      SELECT 1 FROM user_follow f WHERE f.user_id=? AND f.follow_mid=0 AND f.follow_rid=p.user_id)))
+    ORDER BY p.created_at DESC,p.post_id DESC LIMIT ?`).bind(userId, userId, userId, limit).all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+apiRouter.get('/user/posts/mine', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const rows = await c.env.DB.prepare(`SELECT post_id,content,visibility,status,created_at FROM user_post
+    WHERE user_id=? ORDER BY post_id DESC LIMIT 50`).bind(userId).all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+apiRouter.post('/user/posts', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  if (!await consumeRateLimit(c.env.DB, `post:user:${userId}`, 10, 3600)) return c.json({ code: 429, msg: '动态发布过于频繁，请稍后重试' }, 429);
+  const body = await c.req.json().catch(() => ({}));
+  const content = String(body.content || '').trim();
+  const visibility = ['public', 'followers', 'private'].includes(String(body.visibility)) ? String(body.visibility) : 'public';
+  if (!content || content.length > 1000) return c.json({ code: 400, msg: '动态内容须为 1 至 1000 个字符' }, 400);
+  const audit = await c.env.DB.prepare("SELECT value FROM config WHERE key='user_post_audit'").first<{ value: string }>();
+  const status = audit?.value === '1' ? 0 : 1;
+  const result = await c.env.DB.prepare('INSERT INTO user_post(user_id,content,visibility,status,created_at) VALUES(?,?,?,?,?)')
+    .bind(userId, content, visibility, status, Math.floor(Date.now() / 1000)).run();
+  return c.json({ code: 0, msg: status ? '动态已发布' : '动态已提交审核', data: { post_id: Number(result.meta.last_row_id), status } });
+});
+
+apiRouter.post('/user/posts/:id/like', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const postId = Number(c.req.param('id'));
+  const post = await c.env.DB.prepare(`SELECT p.post_id,p.user_id,p.visibility FROM user_post p WHERE p.post_id=? AND p.status=1 AND
+    (p.visibility='public' OR p.user_id=? OR (p.visibility='followers' AND EXISTS(
+      SELECT 1 FROM user_follow f WHERE f.user_id=? AND f.follow_mid=0 AND f.follow_rid=p.user_id)))`)
+    .bind(postId, userId, userId).first<{ post_id: number; user_id: number; visibility: string }>();
+  if (!post) return c.json({ code: 404, msg: '动态不存在或无权查看' }, 404);
+  const existing = await c.env.DB.prepare('SELECT post_id FROM user_post_like WHERE post_id=? AND user_id=?').bind(postId, userId).first();
+  if (existing) {
+    await c.env.DB.prepare('DELETE FROM user_post_like WHERE post_id=? AND user_id=?').bind(postId, userId).run();
+    return c.json({ code: 0, msg: '已取消点赞', data: { liked: false } });
+  }
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT OR IGNORE INTO user_post_like(post_id,user_id,created_at) VALUES(?,?,?)').bind(postId, userId, now),
+    c.env.DB.prepare(`INSERT INTO user_notification(user_id,title,body,kind,target_url,created_at)
+      SELECT user_id,'动态收到点赞','你的动态收到了一个赞','social','/user.html',? FROM user_post
+      WHERE post_id=? AND user_id<>? AND changes()=1`).bind(now, postId, userId),
+  ]);
+  return c.json({ code: 0, msg: '已点赞', data: { liked: true } });
+});
+
+apiRouter.get('/user/wallet', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const [wallet, withdrawals] = await Promise.all([
+    c.env.DB.prepare('SELECT balance_cents FROM user_wallet WHERE user_id=?').bind(userId).first<{ balance_cents: number }>(),
+    c.env.DB.prepare(`SELECT withdrawal_id,amount_cents,payout_method,payout_account,status,note,created_at,updated_at
+      FROM cash_withdrawal WHERE user_id=? ORDER BY withdrawal_id DESC LIMIT 30`).bind(userId).all(),
+  ]);
+  return c.json({ code: 0, data: { balance_cents: Number(wallet?.balance_cents || 0), withdrawals: withdrawals.results || [] } });
+});
+
+apiRouter.post('/user/wallet/withdraw', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  if (!await consumeRateLimit(c.env.DB, `withdrawal:user:${userId}`, 5, 86400)) return c.json({ code: 429, msg: '提现申请次数过多，请明天再试' }, 429);
+  const body = await c.req.json().catch(() => ({}));
+  const amountCents = Math.trunc(Number(body.amount_cents) || 0);
+  const method = String(body.payout_method || '').trim().toLowerCase();
+  const account = String(body.payout_account || '').trim();
+  if (!Number.isInteger(amountCents) || amountCents < 100 || amountCents > 100000000) return c.json({ code: 400, msg: '提现金额须为 1.00 至 1,000,000.00 元' }, 400);
+  if (!['alipay', 'wechat', 'bank', 'other'].includes(method)) return c.json({ code: 400, msg: '请选择有效的收款方式' }, 400);
+  if (account.length < 3 || account.length > 250) return c.json({ code: 400, msg: '收款账号长度无效' }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  const result = await c.env.DB.batch([
+    c.env.DB.prepare('INSERT OR IGNORE INTO user_wallet(user_id,balance_cents,updated_at) VALUES(?,0,?)').bind(userId, now),
+    c.env.DB.prepare('UPDATE user_wallet SET balance_cents=balance_cents-?,updated_at=? WHERE user_id=? AND balance_cents>=?')
+      .bind(amountCents, now, userId, amountCents),
+    c.env.DB.prepare(`INSERT INTO cash_withdrawal(user_id,amount_cents,payout_method,payout_account,status,created_at,updated_at)
+      SELECT ?,?,?,?,'pending',?,? WHERE changes()=1`).bind(userId, amountCents, method, account, now, now),
+    c.env.DB.prepare(`INSERT INTO cash_log(user_id,cash_type,amount,points,status,note,operator,created_at)
+      SELECT ?, 'cash_withdrawal', ?, 0, 1, '提现申请冻结', 'system', ? WHERE changes()=1`)
+      .bind(userId, -amountCents / 100, now),
+  ]);
+  if (!result[1]?.meta.changes || !result[2]?.meta.changes) return c.json({ code: 409, msg: '钱包余额不足，请刷新余额后重试' }, 409);
+  return c.json({ code: 0, msg: '提现申请已提交，金额已冻结，等待管理员处理' });
+});
+
+apiRouter.get('/push/public-key', async (c) => {
+  const publicKey = await WebPushService.publicKey(c.env.DB);
+  return c.json({ code: 0, data: { public_key: publicKey } }, 200, { 'Cache-Control': 'public, max-age=300' });
+});
+
+apiRouter.post('/user/push/subscribe', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const endpoint = String(body.endpoint || '').trim();
+  const p256dh = String(body.keys?.p256dh || '').trim();
+  const auth = String(body.keys?.auth || '').trim();
+  try {
+    const url = new URL(endpoint);
+    if (url.protocol !== 'https:' || url.username || url.password || endpoint.length > 2048) return c.json({ code: 400, msg: 'Push endpoint 无效' }, 400);
+  } catch { return c.json({ code: 400, msg: 'Push endpoint 无效' }, 400); }
+  if (!p256dh || !auth || p256dh.length > 200 || auth.length > 100) return c.json({ code: 400, msg: 'Push 订阅密钥无效' }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.prepare(`INSERT INTO web_push_subscription(user_id,endpoint,p256dh,auth_secret,created_at,last_used_at)
+    VALUES(?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,p256dh=excluded.p256dh,
+    auth_secret=excluded.auth_secret,last_error=''`).bind(userId, endpoint, p256dh, auth, now, now).run();
+  return c.json({ code: 0, msg: '已开启此设备的通知推送' });
+});
+
+apiRouter.post('/user/push/unsubscribe', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  await c.env.DB.prepare('DELETE FROM web_push_subscription WHERE user_id=? AND endpoint=?')
+    .bind(userId, String(body.endpoint || '').slice(0, 2048)).run();
+  return c.json({ code: 0, msg: '已关闭此设备的通知推送' });
+});
+
+apiRouter.get('/user/notifications', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 30));
+  const [rows, count] = await Promise.all([
+    c.env.DB.prepare(`SELECT notification_id,title,body,kind,target_url,created_at,read_at FROM user_notification
+      WHERE user_id=? ORDER BY created_at DESC,notification_id DESC LIMIT ?`).bind(userId, limit).all(),
+    c.env.DB.prepare('SELECT COUNT(*) AS c FROM user_notification WHERE user_id=? AND read_at=0').bind(userId).first<{ c: number }>(),
+  ]);
+  return c.json({ code: 0, data: { unread: Number(count?.c || 0), list: rows.results || [] } });
+});
+
+apiRouter.post('/user/notifications/read', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const now = Math.floor(Date.now() / 1000);
+  const ids = Array.isArray(body.ids) ? Array.from(new Set(body.ids.map(Number).filter((id: number) => Number.isInteger(id) && id > 0))).slice(0, 100) : [];
+  if (!ids.length) await c.env.DB.prepare('UPDATE user_notification SET read_at=? WHERE user_id=? AND read_at=0').bind(now, userId).run();
+  else await c.env.DB.prepare(`UPDATE user_notification SET read_at=? WHERE user_id=? AND read_at=0 AND notification_id IN (${ids.map(() => '?').join(',')})`)
+    .bind(now, userId, ...ids).run();
+  return c.json({ code: 0, msg: '通知已标记为已读' });
+});
+
+apiRouter.post('/payment/notify', async (c) => {
+  let body: any;
+  try { body = await c.req.json(); }
+  catch {
+    try { body = Object.fromEntries(await c.req.formData()); }
+    catch { return c.json({ code: 400, msg: '支付通知格式无效' }, 400); }
+  }
+  try {
+    const result = await PaymentService.processCallback(c.env, {
+      order_code: String(body.order_code || ''), amount_cents: Number(body.amount_cents),
+      merchant_id: String(body.merchant_id || ''), provider_event_id: String(body.provider_event_id || ''),
+      status: String(body.status || ''), timestamp: Number(body.timestamp), sign: String(body.sign || ''),
+      provider_ref: body.provider_ref ? String(body.provider_ref) : '',
+    });
+    return c.json({ code: 0, msg: result.already_paid ? '订单已完成' : '支付成功' });
+  } catch (error) {
+    return c.json({ code: 400, msg: error instanceof Error ? error.message : '支付通知处理失败' }, 400);
+  }
 });
 
 apiRouter.get('/mall/goods', async (c) => {

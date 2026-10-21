@@ -385,6 +385,7 @@ export interface UserItem {
   user_name: string;
   user_pwd?: string;
   user_nick: string;
+  user_pic?: string;
   user_email: string;
   user_phone: string;
   user_status: number;

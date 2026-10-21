@@ -77,11 +77,37 @@ $(function () {
       html += '<span>时间：' + (a.art_time ? new Date(a.art_time * 1000).toLocaleString() : '-') + '</span>';
       html += '<span>阅读：' + (a.art_hits || 0) + '</span>';
       html += '</div></header>';
-      html += '<div class="hl-article-box">' + (a.art_content || '<p>' + U.esc(a.art_blurb || '') + '</p>') + '</div>';
+      if (a.access_locked) {
+        html += '<section id="artAccessBox" style="margin:16px 0;padding:16px;border:1px solid var(--bd-color,#eee);border-radius:8px;">';
+        html += '<strong>本文需要验证后阅读</strong>';
+        if (Number(a.art_points || 0) > 0) html += '<p>阅读本文需消耗 ' + Number(a.art_points) + ' 积分，购买后可重复阅读。</p>';
+        else if (Number(a.group_id || 0) > 1) html += '<p>本文仅限符合等级的会员阅读，请先登录。</p>';
+        if (a.password_required) html += '<label for="artAccessPassword">访问密码</label><input id="artAccessPassword" type="password" autocomplete="current-password" style="margin:8px 0;padding:9px;max-width:280px;width:100%;display:block;">';
+        html += '<button id="artAccessSubmit" type="button" style="padding:9px 16px;cursor:pointer;">验证并阅读</button>';
+        html += '<span id="artAccessMessage" role="status" style="margin-left:10px;"></span></section>';
+      }
+      html += '<div id="articleBody" class="hl-article-box">' + (a.art_content || '<p>' + U.esc(a.art_blurb || '') + '</p>') + '</div>';
       html += '<div class="hl-article-paged"><span style="color:var(--tx-mute,#888);">' + U.esc(Theme.get('art.detail.copyright', '本文由网络整理 © 版权归原作者所有')) + '</span>';
       html += '<a href="/art.html">返回资讯列表 →</a></div>';
       html += '</article>';
       $('#artDetailWrap').html(html);
+      if (a.access_locked) {
+        $('#artAccessSubmit').on('click', function () {
+          var button = $(this);
+          button.prop('disabled', true);
+          $('#artAccessMessage').text('正在验证…');
+          API.post('/api/art/access/' + aid, { password: $('#artAccessPassword').val() || '' }).then(function (result) {
+            if (result.code === 0 && result.data) {
+              $('#articleBody').html(result.data.art_content || '<p>' + U.esc(result.data.art_blurb || '') + '</p>');
+              $('#artAccessBox').remove();
+              return;
+            }
+            $('#artAccessMessage').text((result.data && result.data.reason) || result.msg || '验证失败');
+          }).catch(function () {
+            $('#artAccessMessage').text('验证失败，请稍后重试');
+          }).finally(function () { button.prop('disabled', false); });
+        });
+      }
     }
 
   });

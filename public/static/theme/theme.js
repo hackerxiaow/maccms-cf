@@ -113,13 +113,15 @@
           if (v !== undefined && v !== null && v !== '') u.searchParams.set(k, v);
         });
       }
-      const r = await fetch(u.toString());
+      const token = localStorage.getItem('maccms_user_token') || '';
+      const r = await fetch(u.toString(), { headers: token ? { Authorization: 'Bearer ' + token } : {} });
       return r.json();
     },
     async post(path, body) {
+      const token = localStorage.getItem('maccms_user_token') || '';
       const r = await fetch(path, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {}),
       });
       return r.json();

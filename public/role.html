@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>影视角色 - MacCMS 影视</title>
+  <link rel="shortcut icon" href="/static/theme/img/favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="/static/theme/css/style.css">
+  <link rel="stylesheet" href="/static/theme/css/white.css" name="color">
+  <link rel="stylesheet" href="/static/theme/css/swiper.min.css">
+  <link rel="stylesheet" href="/static/theme/css/maccms.css">
+</head>
+<body>
+<div id="siteHeader"></div>
+<main id="conch-content" class="conch-content">
+  <div class="container hl-ctwrap-item" style="padding:20px 0;">
+    <div id="roleDetail" class="hl-row-box" style="display:none;margin-bottom:20px;"></div>
+    <section class="hl-row-box">
+      <div class="hl-rb-head clearfix">
+        <h1 class="hl-rb-title" style="font-size:1.25rem;font-weight:800;">影视角色</h1>
+        <span class="hl-rb-more hl-text-muted" id="roleMeta">正在载入…</span>
+      </div>
+      <form id="roleSearch" style="display:flex;gap:8px;margin:12px 0;max-width:520px;">
+        <input id="roleKeyword" type="search" placeholder="搜索角色、演员或影视" style="flex:1;min-width:0;padding:9px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+        <button type="submit" style="padding:9px 16px;cursor:pointer;">搜索</button>
+      </form>
+      <ul id="roleList" class="hl-one-list clearfix" style="margin-top:14px;"></ul>
+      <div id="roleEmpty" class="hl-empty" style="display:none;padding:40px 0;">暂无角色记录</div>
+      <div id="rolePager" class="hl-page-box" style="margin-top:20px;"></div>
+    </section>
+  </div>
+</main>
+<div id="siteFooter"></div>
+<script src="/static/theme/js/jquery.min.js"></script>
+<script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js"></script>
+<script>
+var roleId = parseInt(new URLSearchParams(location.search).get('id') || '0', 10);
+var rolePage = Math.max(1, parseInt(new URLSearchParams(location.search).get('page') || '1', 10));
+var roleWd = new URLSearchParams(location.search).get('wd') || '';
+
+$(function () {
+  Theme.init().then(function () {
+    Layout.render('actor');
+    $('#roleKeyword').val(roleWd);
+    $('#roleSearch').on('submit', function (event) {
+      event.preventDefault();
+      var wd = $('#roleKeyword').val().trim();
+      location.href = '/role.html' + (wd ? '?wd=' + encodeURIComponent(wd) : '');
+    });
+    if (roleId) loadRoleDetail(); else loadRoles();
+  });
+});
+
+function loadRoles() {
+  API.get('/api/role/list', { page: rolePage, limit: 24, wd: roleWd }).then(function (result) {
+    var data = result.data || {};
+    var rows = data.list || [];
+    $('#roleMeta').text('共 ' + (data.total || 0) + ' 个角色');
+    if (!rows.length) { $('#roleEmpty').show(); $('#roleList,#rolePager').empty(); return; }
+    $('#roleEmpty').hide();
+    $('#roleList').html(rows.map(function (role) {
+      var image = U.esc(role.role_pic || '/static/theme/img/touxiang.png');
+      return '<li class="hl-list-item hl-col-xs-6 hl-col-sm-4 hl-col-md-3" style="margin-bottom:16px;">' +
+        '<a href="/role.html?id=' + role.role_id + '" style="display:block;color:inherit;text-decoration:none;">' +
+        '<div class="hl-lazy" data-original="' + image + '" style="width:100%;padding-top:125%;border-radius:8px;background-size:cover;background-position:center;background-color:#eee;"></div>' +
+        '<div class="hl-lc-1" style="font-weight:700;margin-top:8px;">' + U.esc(role.role_name || '未命名角色') + '</div>' +
+        '<div class="hl-lc-1" style="font-size:.85rem;color:var(--tx-mute,#888);">' + U.esc(role.role_actor_name || '演员待补充') + '</div>' +
+        '<div class="hl-lc-1" style="font-size:.8rem;color:var(--tx-mute,#888);">' + U.esc(role.role_vod_name || '') + '</div></a></li>';
+    }).join(''));
+    Interact.lazy($('#roleList')[0]);
+    $('#rolePager').html(Card.page(data.page, data.pagecount, '/role.html' + (roleWd ? '?wd=' + encodeURIComponent(roleWd) : '')));
+  }).catch(function () { $('#roleMeta').text('角色数据加载失败'); });
+}
+
+function loadRoleDetail() {
+  $('#roleDetail').show().html('<div class="hl-loading">正在载入角色…</div>');
+  $('#roleSearch,#roleList,#rolePager').hide();
+  API.get('/api/role/detail/' + roleId).then(function (result) {
+    if (result.code !== 0 || !result.data) { $('#roleDetail').html('<div class="hl-empty">角色不存在或已下架</div>'); return; }
+    var role = result.data;
+    document.title = (role.role_name || '角色') + ' - MacCMS 影视';
+    var actor = role.actor;
+    var vod = role.vod;
+    var html = '<div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;padding:18px;">' +
+      '<img src="' + U.esc(role.role_pic || '/static/theme/img/touxiang.png') + '" alt="' + U.esc(role.role_name) + '" style="width:min(220px,38vw);aspect-ratio:3/4;object-fit:cover;border-radius:8px;">' +
+      '<div style="flex:1;min-width:220px;"><h1 style="margin:0 0 12px;font-size:1.5rem;">' + U.esc(role.role_name) + '</h1>' +
+      (role.role_en ? '<p>英文名：' + U.esc(role.role_en) + '</p>' : '') +
+      '<p>演员：' + (actor ? '<a href="/actor_detail.html?id=' + actor.actor_id + '">' + U.esc(actor.actor_name) + '</a>' : U.esc(role.role_actor_name || '暂无')) + '</p>' +
+      '<p>影视：' + (vod ? '<a href="/detail.html?id=' + vod.vod_id + '">' + U.esc(vod.vod_name) + '</a>' : U.esc(role.role_vod_name || '暂无')) + '</p>' +
+      (role.role_remarks ? '<p>备注：' + U.esc(role.role_remarks) + '</p>' : '') +
+      '<div style="line-height:1.8;white-space:pre-wrap;">' + U.esc(role.role_content || '暂无角色介绍') + '</div></div></div>';
+    $('#roleDetail').html(html);
+  }).catch(function () { $('#roleDetail').html('<div class="hl-empty">角色数据加载失败</div>'); });
+}
+</script>
+</body>
+</html>

@@ -36,6 +36,20 @@
           <input type="password" id="loginPwd" placeholder="请输入密码" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
         </div>
         <button type="button" class="hl-btn-conch hl-bg-conch" id="btnDoLogin" style="width:100%;padding:11px;font-weight:700;border:none;border-radius:6px;color:#fff;cursor:pointer;">立即登录</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          <button type="button" id="btnSendGuestVerify" style="padding:7px 11px;border:1px solid var(--bd-color,#ddd);border-radius:6px;background:none;cursor:pointer;">发送邮箱验证邮件</button>
+          <button type="button" id="btnShowPasswordReset" style="padding:7px 11px;border:1px solid var(--bd-color,#ddd);border-radius:6px;background:none;cursor:pointer;">忘记密码</button>
+        </div>
+        <div id="guestVerifyBox" style="display:none;margin-top:12px;">
+          <input type="email" id="guestVerifyEmail" placeholder="账号绑定的邮箱" style="width:100%;padding:9px 12px;margin-bottom:8px;box-sizing:border-box;">
+          <div style="display:flex;gap:8px;"><input id="guestVerifyCode" inputmode="numeric" maxlength="6" placeholder="6 位验证码" style="flex:1;min-width:0;padding:9px 12px;"><button type="button" id="btnConfirmGuestVerify">确认验证</button></div>
+        </div>
+        <div id="passwordResetBox" style="display:none;margin-top:12px;">
+          <input type="email" id="resetEmail" placeholder="账号绑定的邮箱" style="width:100%;padding:9px 12px;margin-bottom:8px;box-sizing:border-box;">
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:8px;"><input id="resetCode" inputmode="numeric" maxlength="6" placeholder="6 位验证码" style="min-width:0;padding:9px 12px;"><button type="button" id="btnSendResetCode">发送验证码</button></div>
+          <input type="password" id="resetPassword" autocomplete="new-password" placeholder="新密码（8-128 位）" style="width:100%;padding:9px 12px;margin-bottom:8px;box-sizing:border-box;">
+          <button type="button" id="btnConfirmPasswordReset">重置密码</button>
+        </div>
       </div>
 
       <!-- 注册表单 -->
@@ -45,12 +59,20 @@
           <input type="text" id="regUser" placeholder="请设置用户名" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
         </div>
         <div style="margin-bottom:12px;">
-          <label style="display:block;font-size:.85rem;margin-bottom:4px;">设定密码 (不少于6位)</label>
+          <label style="display:block;font-size:.85rem;margin-bottom:4px;">设定密码 (不少于8位)</label>
           <input type="password" id="regPwd" placeholder="请设置登录密码" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block;font-size:.85rem;margin-bottom:4px;">邮箱（用于验证和找回密码）</label>
+          <input type="email" id="regEmail" maxlength="120" placeholder="name@example.com" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
         </div>
         <div style="margin-bottom:16px;">
           <label style="display:block;font-size:.85rem;margin-bottom:4px;">个性昵称 (选填)</label>
           <input type="text" id="regNick" placeholder="热心影迷" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:.85rem;margin-bottom:4px;">邀请码（选填）</label>
+          <input type="text" id="regInviteCode" maxlength="24" placeholder="填写邀请人的邀请码" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
         </div>
         <button type="button" class="hl-btn-conch hl-bg-conch" id="btnDoRegister" style="width:100%;padding:11px;font-weight:700;border:none;border-radius:6px;color:#fff;cursor:pointer;">立即注册账号</button>
       </div>
@@ -74,6 +96,45 @@
         <button type="button" id="btnLogout" style="padding:6px 16px;border:1px solid #ddd;background:none;border-radius:20px;cursor:pointer;font-size:.85rem;">退出登录</button>
       </div>
 
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:20px;">
+        <h3 style="margin:0 0 14px;font-size:1.05rem;">个人资料与密码</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;">
+          <input type="text" id="profileNick" maxlength="40" placeholder="昵称" style="padding:9px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <input type="email" id="profileEmail" maxlength="120" placeholder="邮箱" style="padding:9px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <input type="text" id="profilePhone" maxlength="32" placeholder="手机号" style="padding:9px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:9px;">
+          <button type="button" id="btnSendEmailVerify" style="padding:7px 11px;border:1px solid var(--bd-color,#ddd);border-radius:6px;background:none;cursor:pointer;">发送邮箱验证码</button>
+          <input id="profileEmailCode" inputmode="numeric" maxlength="6" placeholder="6 位验证码" style="padding:8px 10px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <button type="button" id="btnConfirmEmailVerify" style="padding:7px 11px;border:1px solid var(--bd-color,#ddd);border-radius:6px;background:none;cursor:pointer;">验证邮箱</button>
+          <span id="emailVerifyStatus" role="status" style="font-size:.85rem;color:var(--tx-mute,#888);"></span>
+        </div>
+        <button type="button" id="btnSaveProfile" style="margin-top:10px;padding:8px 16px;border:0;border-radius:6px;background:var(--hl-site,#09f);color:#fff;cursor:pointer;">保存资料</button>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;">
+          <input type="file" id="avatarFile" accept="image/jpeg,image/png,image/gif,image/webp" style="max-width:250px;">
+          <button type="button" id="btnUploadAvatar" style="padding:8px 16px;border:1px solid var(--bd-color,#ddd);border-radius:6px;background:var(--bg-subs,#f8fafc);cursor:pointer;">上传头像（最大 2 MB）</button>
+          <span id="avatarUploadMessage" role="status" style="font-size:.85rem;color:var(--tx-mute,#888);"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:18px;">
+          <input type="password" id="currentPassword" autocomplete="current-password" placeholder="当前密码" style="padding:9px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <input type="password" id="newPassword" autocomplete="new-password" placeholder="新密码（8-128位）" style="padding:9px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <input type="password" id="confirmPassword" autocomplete="new-password" placeholder="确认新密码" style="padding:9px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+        </div>
+        <button type="button" id="btnChangePassword" style="margin-top:10px;padding:8px 16px;border:1px solid var(--bd-color,#ddd);border-radius:6px;background:var(--bg-subs,#f8fafc);cursor:pointer;">修改密码</button>
+      </div>
+
+      <div id="inviteBox" class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:20px;display:none;">
+        <h3 style="margin:0 0 8px;font-size:1.05rem;">邀请好友</h3>
+        <div id="inviteRewardHint" style="font-size:.9rem;color:var(--tx-mute,#777);margin-bottom:12px;"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+          <input id="myInviteCode" readonly aria-label="我的邀请码" style="padding:9px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <input id="myInviteUrl" readonly aria-label="我的邀请链接" style="padding:9px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+        </div>
+        <button type="button" id="btnCopyInvite" style="margin-top:10px;padding:8px 16px;border:1px solid var(--bd-color,#ddd);border-radius:6px;background:none;cursor:pointer;">复制邀请链接</button>
+        <div id="inviteSummary" style="display:inline-block;margin-left:12px;font-size:.9rem;color:var(--tx-mute,#777);"></div>
+        <div id="inviteList" style="margin-top:12px;font-size:.9rem;color:var(--tx-mute,#777);"></div>
+      </div>
+
       <!-- 充值与升级板块 -->
       <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:20px;">
         <h3 style="margin:0 0 14px;font-size:1.1rem;font-weight:700;">充值卡密与开通 VIP</h3>
@@ -82,12 +143,38 @@
           <input type="text" id="cardPwd" placeholder="充值卡密" style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
           <button type="button" id="btnRedeem" style="padding:8px 20px;background:var(--hl-site,#0099ff);color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;">立即充值</button>
         </div>
+        <h4 style="margin:14px 0 8px;">在线充值 / 购买会员</h4>
+        <div id="paymentPlans" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;"></div>
+        <div id="paymentOrders" style="margin-top:10px;font-size:.88rem;color:var(--tx-mute,#777);"></div>
+        <p id="paymentHint" style="margin:8px 0 14px;font-size:.82rem;color:var(--tx-mute,#888);"></p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button type="button" class="vip-btn" data-type="day" style="padding:8px 14px;border:1px solid var(--bd-color,#eee);border-radius:6px;background:var(--bg-subs,#f8fafc);cursor:pointer;">日度 VIP (10积分)</button>
           <button type="button" class="vip-btn" data-type="week" style="padding:8px 14px;border:1px solid var(--bd-color,#eee);border-radius:6px;background:var(--bg-subs,#f8fafc);cursor:pointer;">周度 VIP (50积分)</button>
           <button type="button" class="vip-btn" data-type="month" style="padding:8px 14px;border:1px solid var(--hl-site,#0099ff);border-radius:6px;background:var(--hl-site,#0099ff);color:#fff;font-weight:700;cursor:pointer;">月度 VIP (180积分)</button>
           <button type="button" class="vip-btn" data-type="year" style="padding:8px 14px;border:1px solid var(--bd-color,#eee);border-radius:6px;background:var(--bg-subs,#f8fafc);cursor:pointer;">年度 VIP (1800积分)</button>
         </div>
+      </div>
+
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:20px;">
+        <h3 style="margin:0 0 10px;font-size:1.05rem;">钱包与提现</h3>
+        <div id="walletBalance" style="margin-bottom:10px;color:var(--tx-mute,#777);">可用余额 ¥ 0.00</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input type="number" id="withdrawAmount" min="1" step="0.01" placeholder="提现金额（元）" style="padding:8px 10px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <select id="withdrawMethod" style="padding:8px 10px;border:1px solid var(--bd-color,#ddd);border-radius:6px;"><option value="alipay">支付宝</option><option value="wechat">微信</option><option value="bank">银行卡</option><option value="other">其他</option></select>
+          <input type="text" id="withdrawAccount" maxlength="250" placeholder="收款账号" style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+          <button type="button" id="btnWithdraw" style="padding:8px 14px;border:0;border-radius:6px;background:var(--hl-site,#09f);color:#fff;cursor:pointer;">提交提现</button>
+        </div>
+        <div class="sub" style="margin-top:7px;">提现申请会冻结钱包余额；管理员处理后可查看状态。钱包余额由站点管理员调整。</div>
+        <div id="withdrawalList" style="margin-top:10px;font-size:.9rem;"></div>
+      </div>
+
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-size:1.05rem;">登录设备管理</h3>
+          <button type="button" id="btnRevokeOtherSessions" style="padding:7px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;background:var(--bg-subs,#f8fafc);cursor:pointer;">退出其他设备</button>
+        </div>
+        <div id="sessionActionMessage" role="status" style="margin-top:8px;font-size:.85rem;color:var(--tx-mute,#777);"></div>
+        <div id="sessionList" style="margin-top:12px;font-size:.9rem;color:var(--tx-mute,#777);">正在载入设备…</div>
       </div>
 
       <!-- 足迹与收藏夹 -->
@@ -100,6 +187,11 @@
         </div>
         <ul class="hl-one-list clearfix" id="logList"></ul>
         <div id="logEmpty" class="hl-empty" style="display:none;padding:30px 0;">暂无记录</div>
+      </div>
+
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-top:20px;">
+        <h3 style="margin:0 0 12px;font-size:1.05rem;">跨设备继续观看</h3>
+        <div id="progressList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;"></div>
       </div>
 
       <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-top:20px;">
@@ -120,6 +212,13 @@
       </div>
 
       <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-top:20px;">
+        <h3 style="margin:0 0 10px;font-size:1.05rem;">会员动态</h3>
+        <textarea id="postContent" maxlength="1000" placeholder="分享一条动态（最多 1000 字）" style="display:block;width:100%;min-height:78px;box-sizing:border-box;padding:10px;border:1px solid var(--bd-color,#ddd);border-radius:7px;"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;"><select id="postVisibility" style="padding:7px 10px;border:1px solid var(--bd-color,#ddd);border-radius:6px;"><option value="public">公开</option><option value="followers">仅关注者</option><option value="private">仅自己</option></select><button type="button" id="btnPublishPost" style="padding:7px 13px;border:0;border-radius:6px;background:var(--hl-site,#09f);color:#fff;cursor:pointer;">发布动态</button><span class="sub">动态可能需要管理员审核。</span></div>
+        <div id="memberFeed" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-top:20px;">
         <h3 style="margin:0 0 14px;font-size:1.05rem;">站内私信与关注</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
           <input type="number" id="pmReceiver" placeholder="收件会员 ID" style="padding:8px 12px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
@@ -128,6 +227,15 @@
         </div>
         <div id="pmList" style="font-size:.9rem;"></div>
         <h4 style="margin:18px 0 8px;">我的关注</h4><div id="followList" style="font-size:.9rem;color:var(--tx-mute,#777);"></div>
+      </div>
+
+      <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-top:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-size:1.05rem;">通知中心</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" id="btnEnablePush" style="padding:7px 11px;cursor:pointer;">开启此设备推送</button><button type="button" id="btnReadAllNotifications" style="padding:7px 11px;cursor:pointer;">全部标为已读</button></div>
+        </div>
+        <div id="notificationSummary" style="margin-top:8px;font-size:.85rem;color:var(--tx-mute,#777);"></div>
+        <div id="notificationList" style="margin-top:10px;font-size:.9rem;"></div>
       </div>
     </div>
   </div>
@@ -144,6 +252,8 @@ var token = localStorage.getItem(USER_TOKEN_KEY) || '';
 var currentLogType = 'history';
 
 $(function () {
+  var invitedBy = new URLSearchParams(window.location.search).get('invite');
+  if (invitedBy) $('#regInviteCode').val(invitedBy.slice(0, 24));
   Theme.init().then(function () {
     Layout.render('user');
     checkAuthState();
@@ -167,7 +277,9 @@ function checkAuthState() {
       $('#userBox').show();
       renderProfile(j.data);
       loadLogs();
+      loadProgress();
       loadMemberExtras();
+      loadInviteInfo();
     } else {
       localStorage.removeItem(USER_TOKEN_KEY);
       $('#guestBox').show();
@@ -181,7 +293,16 @@ function checkAuthState() {
 
 function renderProfile(u) {
   $('#uNick').text(u.user_nick || u.user_name);
-  $('#userAvatar').text((u.user_nick || u.user_name).charAt(0).toUpperCase());
+  if (u.user_pic && (/^\/media\//.test(String(u.user_pic)) || /^https?:\/\//i.test(String(u.user_pic)))) {
+    $('#userAvatar').html('<img src="' + U.esc(u.user_pic) + '" alt="会员头像" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">');
+  } else {
+    $('#userAvatar').css('background-image', 'none').text((u.user_nick || u.user_name).charAt(0).toUpperCase());
+  }
+  $('#profileNick').val(u.user_nick || '');
+  $('#profileEmail').val(u.user_email || '');
+  $('#profilePhone').val(u.user_phone || '');
+  $('#emailVerifyStatus').text(Number(u.user_email_verified) === 1 ? '邮箱已验证' : (u.user_email ? '邮箱未验证' : '请先填写邮箱'));
+  $('#btnSendEmailVerify,#profileEmailCode,#btnConfirmEmailVerify').toggle(Boolean(u.user_email) && Number(u.user_email_verified) !== 1);
   $('#uGroup').text(u.group_name || '普通会员');
   $('#uPoints').text(u.user_points || 0);
 
@@ -193,7 +314,67 @@ function renderProfile(u) {
   }
 }
 
+function loadInviteInfo() {
+  var activeToken = localStorage.getItem(USER_TOKEN_KEY) || '';
+  fetch('/api/user/invite', { headers: { Authorization: 'Bearer ' + activeToken } })
+    .then(function (response) { return response.json(); })
+    .then(function (result) {
+      if (result.code !== 0 || !result.data) return;
+      var invite = result.data;
+      $('#inviteBox').toggle(!!invite.enabled);
+      if (!invite.enabled) return;
+      $('#myInviteCode').val(invite.invite_code || '');
+      $('#myInviteUrl').val(invite.invite_url || '');
+      $('#inviteRewardHint').text('好友通过邀请码注册后，您获得 ' + invite.inviter_points + ' 积分' + (invite.invited_points ? '，好友获得 ' + invite.invited_points + ' 积分。' : '。'));
+      $('#inviteSummary').text('已邀请 ' + invite.invite_count + ' 人，累计获得 ' + invite.earned_points + ' 积分');
+      var rows = invite.list || [];
+      $('#inviteList').html(rows.length ? '<strong>最近邀请</strong><div style="margin-top:6px;">' + rows.map(function (row) {
+        return '<div style="padding:5px 0;border-bottom:1px solid var(--bd-color,#eee);">' + U.esc(row.user_name) + ' · ' + new Date(Number(row.created_at) * 1000).toLocaleDateString() + ' · +' + Number(row.inviter_points || 0) + ' 积分</div>';
+      }).join('') + '</div>' : '分享邀请链接，邀请好友注册。');
+    }).catch(function () {});
+}
+
 function bindEvents() {
+  $('#btnUploadAvatar').on('click', function () {
+    var file = $('#avatarFile')[0].files[0];
+    if (!file) { $('#avatarUploadMessage').text('请选择图片文件'); return; }
+    var form = new FormData();
+    form.append('avatar', file);
+    var token = localStorage.getItem('maccms_user_token') || '';
+    var button = $(this).prop('disabled', true);
+    $('#avatarUploadMessage').text('正在上传…');
+    fetch('/api/user/avatar', { method: 'POST', headers: token ? { Authorization: 'Bearer ' + token } : {}, body: form })
+      .then(function (response) { return response.json(); })
+      .then(function (result) {
+        if (result.code === 0) {
+          $('#avatarUploadMessage').text('头像已更新');
+          return checkAuthState();
+        }
+        $('#avatarUploadMessage').text(result.msg || '头像上传失败');
+      }).catch(function () { $('#avatarUploadMessage').text('头像上传失败，请稍后重试'); })
+      .finally(function () { button.prop('disabled', false); });
+  });
+
+  $('#btnSaveProfile').on('click', function () {
+    memberRequest('/api/user/profile', 'POST', {
+      nick: $('#profileNick').val(), email: $('#profileEmail').val(),
+      phone: $('#profilePhone').val()
+    }).then(function (result) {
+      if (result.code === 0) { renderProfile(result.data); alert('资料已保存'); }
+      else alert(result.msg || '资料保存失败');
+    });
+  });
+
+  $('#btnChangePassword').on('click', function () {
+    var current = $('#currentPassword').val();
+    var next = $('#newPassword').val();
+    if (next !== $('#confirmPassword').val()) { alert('两次输入的新密码不一致'); return; }
+    memberRequest('/api/user/password/change', 'POST', { current_password: current, new_password: next }).then(function (result) {
+      if (result.code === 0) { $('#currentPassword,#newPassword,#confirmPassword').val(''); alert('密码已修改'); }
+      else alert(result.msg || '密码修改失败');
+    });
+  });
+
   $('#authTabs a').on('click', function () {
     $('#authTabs a').removeClass('active');
     $(this).addClass('active');
@@ -222,15 +403,77 @@ function bindEvents() {
     });
   });
 
+  $('#btnShowPasswordReset').on('click', function () { $('#passwordResetBox').toggle(); $('#guestVerifyBox').hide(); });
+  $('#btnSendGuestVerify').on('click', async function () {
+    var username = $('#loginUser').val().trim(), password = $('#loginPwd').val(), email = $('#guestVerifyEmail').val().trim();
+    if (!username || !password) { alert('请先填写账号和密码'); return; }
+    var result = await API.post('/api/user/email/verification/send', { username: username, password: password, email: email });
+    alert(result.msg || (result.code === 0 ? '验证邮件已发送' : '发送失败'));
+    if (result.code === 0) $('#guestVerifyBox').show();
+  });
+  $('#btnConfirmGuestVerify').on('click', async function () {
+    var email = $('#guestVerifyEmail').val().trim(), code = $('#guestVerifyCode').val().trim();
+    var result = await API.post('/api/user/email/verification/confirm', { email: email, code: code });
+    alert(result.msg || (result.code === 0 ? '验证成功' : '验证失败'));
+  });
+  $('#btnSendResetCode').on('click', async function () {
+    var result = await API.post('/api/user/password/reset/send', { email: $('#resetEmail').val().trim() });
+    alert(result.msg || '如果邮箱已绑定账号，验证码将发送到邮箱');
+  });
+  $('#btnConfirmPasswordReset').on('click', async function () {
+    var result = await API.post('/api/user/password/reset/confirm', {
+      email: $('#resetEmail').val().trim(), code: $('#resetCode').val().trim(), new_password: $('#resetPassword').val()
+    });
+    alert(result.msg || (result.code === 0 ? '密码已重置' : '重置失败'));
+    if (result.code === 0) { $('#passwordResetBox').hide(); $('#loginUser').val($('#resetEmail').val().trim()); }
+  });
+
+  $('#btnSendEmailVerify').on('click', async function () {
+    var result = await memberRequest('/api/user/email/verification/send', 'POST', {});
+    $('#emailVerifyStatus').text(result.msg || (result.code === 0 ? '验证邮件已发送' : '发送失败'));
+  });
+  $('#btnConfirmEmailVerify').on('click', async function () {
+    var result = await memberRequest('/api/user/email/verification/confirm', 'POST', {
+      email: $('#profileEmail').val().trim(), code: $('#profileEmailCode').val().trim()
+    });
+    $('#emailVerifyStatus').text(result.msg || (result.code === 0 ? '邮箱验证成功' : '验证码无效'));
+    if (result.code === 0) checkAuthState();
+  });
+
+  $('#btnEnablePush').on('click', async function () {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) { alert('当前浏览器不支持 Web Push'); return; }
+    try {
+      var permission = await Notification.requestPermission();
+      if (permission !== 'granted') { alert('需要允许通知权限后才能开启推送'); return; }
+      var keyResult = await API.get('/api/push/public-key');
+      var publicKey = keyResult.data && keyResult.data.public_key;
+      if (!publicKey) { alert('网站尚未配置推送密钥'); return; }
+      var registration = await navigator.serviceWorker.register('/sw.js');
+      var subscription = await registration.pushManager.getSubscription();
+      if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+      var saved = await memberRequest('/api/user/push/subscribe', 'POST', subscription.toJSON());
+      alert(saved.msg || '此设备推送已开启');
+    } catch (error) { alert(error && error.message ? error.message : '开启通知推送失败'); }
+  });
+  $('#btnReadAllNotifications').on('click', function () {
+    memberRequest('/api/user/notifications/read', 'POST', {}).then(function (result) { $('#notificationSummary').text(result.msg || '通知已更新'); loadMemberExtras(); });
+  });
+
   $('#btnDoRegister').on('click', function () {
     var u = $('#regUser').val().trim();
     var p = $('#regPwd').val().trim();
     var n = $('#regNick').val().trim();
     if (!u || !p) { alert('请输入用户名与密码'); return; }
 
-    API.post('/api/user/register', { username: u, password: p, nick: n }).then(function (j) {
+    API.post('/api/user/register', { username: u, password: p, email: $('#regEmail').val().trim(), nick: n, invite_code: $('#regInviteCode').val().trim() }).then(function (j) {
       if (j.code === 0) {
-        localStorage.setItem(USER_TOKEN_KEY, j.data.token);
+        if (j.data && j.data.requires_email_verification) {
+          $('#loginUser').val(u); $('#loginPwd').val(p); $('#guestVerifyEmail').val($('#regEmail').val().trim()); $('#guestVerifyBox').show();
+          $('#authTabs a[data-tab="login"]').trigger('click');
+          alert(j.msg || '验证码已发送，请验证邮箱后登录。');
+          return;
+        }
+        if (j.data && j.data.token) localStorage.setItem(USER_TOKEN_KEY, j.data.token);
         alert('恭喜您注册成功！已为您自动登录并赠送初始积分。');
         checkAuthState();
       } else {
@@ -239,9 +482,37 @@ function bindEvents() {
     });
   });
 
+  $('#btnCopyInvite').on('click', function () {
+    var link = $('#myInviteUrl').val();
+    if (!link) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(function () { alert('邀请链接已复制'); }).catch(function () { $('#myInviteUrl').trigger('select'); });
+    else { $('#myInviteUrl').trigger('select'); document.execCommand('copy'); alert('邀请链接已复制'); }
+  });
+
   $('#btnLogout').on('click', function () {
-    localStorage.removeItem(USER_TOKEN_KEY);
-    checkAuthState();
+    memberRequest('/api/user/logout', 'POST', {}).finally(function () {
+      localStorage.removeItem(USER_TOKEN_KEY);
+      checkAuthState();
+    });
+  });
+
+  $('#btnRevokeOtherSessions').on('click', function () {
+    memberRequest('/api/user/sessions/revoke-others', 'POST', {}).then(function (result) {
+      $('#sessionActionMessage').text(result.msg || '操作完成');
+      loadMemberExtras();
+    });
+  });
+
+  $('#sessionList').on('click', '[data-revoke-session]', function () {
+    var sessionId = $(this).data('revoke-session');
+    var current = $(this).data('current') === 1;
+    memberRequest('/api/user/sessions/' + encodeURIComponent(sessionId) + '/revoke', 'POST', {}).then(function (result) {
+      if (result.code !== 0) { alert(result.msg || '退出设备失败'); return; }
+      if (current) {
+        localStorage.removeItem(USER_TOKEN_KEY);
+        checkAuthState();
+      } else loadMemberExtras();
+    });
   });
 
   $('#btnRedeem').on('click', function () {
@@ -292,6 +563,37 @@ function bindEvents() {
     memberRequest('/api/user/coupons/redeem','POST',{code:code}).then(function(result){alert(result.msg||'兑换完成');if(result.code===0){$('#couponCode').val('');loadMemberExtras();}});
   });
 
+  $('#paymentPlans').on('click', '[data-payment-plan]', function () {
+    var button = $(this), planCode = button.attr('data-payment-plan');
+    var paymentWindow = window.open('about:blank', '_blank');
+    button.prop('disabled', true);
+    memberRequest('/api/user/payment/create', 'POST', { plan_code: planCode }).then(function (result) {
+      if (result.code !== 0 || !result.data || !result.data.checkout_url) {
+        if (paymentWindow) paymentWindow.close();
+        alert(result.msg || '创建支付订单失败');
+        return;
+      }
+      if (paymentWindow) paymentWindow.location.href = result.data.checkout_url;
+      else location.href = result.data.checkout_url;
+      loadMemberExtras();
+    }).finally(function () { button.prop('disabled', false); });
+  });
+
+  $('#btnWithdraw').on('click', function () {
+    var amount=Math.round((Number($('#withdrawAmount').val())||0)*100),method=$('#withdrawMethod').val(),account=$('#withdrawAccount').val().trim();
+    if(!amount||!account){alert('请输入提现金额和收款账号');return;}
+    if(!confirm('确认申请提现 ¥ '+(amount/100).toFixed(2)+'？金额提交后会暂时冻结。'))return;
+    memberRequest('/api/user/wallet/withdraw','POST',{amount_cents:amount,payout_method:method,payout_account:account}).then(function(result){alert(result.msg||'申请已提交');if(result.code===0){$('#withdrawAmount,#withdrawAccount').val('');loadMemberExtras();}});
+  });
+
+  $('#btnPublishPost').on('click', function () {
+    var content=$('#postContent').val().trim();if(!content){alert('请输入动态内容');return;}
+    memberRequest('/api/user/posts','POST',{content:content,visibility:$('#postVisibility').val()}).then(function(result){alert(result.msg||'动态已提交');if(result.code===0){$('#postContent').val('');loadMemberExtras();}});
+  });
+
+  $('#memberFeed').on('click','[data-like-post]',function(){var button=$(this),postId=Number(button.data('like-post'));memberRequest('/api/user/posts/'+postId+'/like','POST',{}).then(function(result){if(result.code===0)loadMemberExtras();else alert(result.msg||'操作失败');});});
+  $('#memberFeed').on('click','[data-follow-member]',function(){var button=$(this),id=Number(button.data('follow-member'));memberRequest('/api/user/follows/toggle','POST',{model:'user',id:id}).then(function(result){if(result.code===0)loadMemberExtras();else alert(result.msg||'操作失败');});});
+
   $('#btnSendPm').on('click', function () {
     var receiver=Number($('#pmReceiver').val()),content=$('#pmContent').val().trim();
     if(!receiver||!content){alert('请输入收件会员 ID 和私信内容');return;}
@@ -336,10 +638,18 @@ function memberRequest(path,method,payload){
     .then(function(response){return response.json();}).catch(function(){return {code:500,msg:'请求失败，请稍后重试'};});
 }
 
+function urlBase64ToUint8Array(value){
+  var normalized=(value+'='.repeat((4-value.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/');
+  var raw=atob(normalized),output=new Uint8Array(raw.length);
+  for(var i=0;i<raw.length;i++)output[i]=raw.charCodeAt(i);
+  return output;
+}
+
 function loadMemberExtras(){
   Promise.all([
     memberRequest('/api/user/coupons','GET'),memberRequest('/api/user/messages','GET'),
-    memberRequest('/api/user/follows','GET'),memberRequest('/api/mall/goods','GET'),memberRequest('/api/mall/orders','GET'),memberRequest('/api/mall/seckill','GET')
+    memberRequest('/api/user/follows','GET'),memberRequest('/api/mall/goods','GET'),memberRequest('/api/mall/orders','GET'),memberRequest('/api/mall/seckill','GET'),
+    memberRequest('/api/user/sessions','GET'),memberRequest('/api/user/payment/plans','GET'),memberRequest('/api/user/payments','GET'),memberRequest('/api/user/notifications','GET'),memberRequest('/api/user/wallet','GET'),memberRequest('/api/user/feed?limit=20','GET')
   ]).then(function(results){
     var coupons=results[0].data||[];
     var now=Math.floor(Date.now()/1000);
@@ -348,9 +658,27 @@ function loadMemberExtras(){
     var messages=results[1].data||[];
     $('#pmList').html(messages.length?messages.slice(0,20).map(function(item){return '<div style="padding:7px 0;border-bottom:1px solid var(--bd-color,#eee)"><strong>'+U.esc(item.sender_name||'会员')+'</strong> · '+U.esc(new Date(item.created_at*1000).toLocaleString())+'<div>'+U.esc(item.content)+'</div></div>';}).join(''):'暂无私信');
     var follows=results[2].data||[];
-    $('#followList').html(follows.length?follows.map(function(item){return '<span style="display:inline-flex;align-items:center;gap:6px;margin:0 8px 8px 0;padding:5px 9px;border-radius:15px;background:var(--bg-subs,#f1f5f9)">模型 '+U.esc(item.follow_mid)+' · #'+item.follow_rid+' <button data-unfollow="1" data-mid="'+item.follow_mid+'" data-rid="'+item.follow_rid+'" style="border:0;background:none;color:#b45309;cursor:pointer">取消</button></span>';}).join(''):'暂无关注内容');
+    $('#followList').html(follows.length?follows.map(function(item){return '<span style="display:inline-flex;align-items:center;gap:6px;margin:0 8px 8px 0;padding:5px 9px;border-radius:15px;background:var(--bg-subs,#f1f5f9)">'+(Number(item.follow_mid)===0?'会员':'模型 '+U.esc(item.follow_mid))+' · #'+item.follow_rid+' <button data-unfollow="1" data-mid="'+item.follow_mid+'" data-rid="'+item.follow_rid+'" style="border:0;background:none;color:#b45309;cursor:pointer">取消</button></span>';}).join(''):'暂无关注内容');
     var goods=results[3].data||[];
     var campaigns=results[5].data||[];
+    var sessions=results[6].data||[];
+    var paymentData=results[7].data||{};
+    var paymentPlans=paymentData.plans||[];
+    var paymentItems=results[8].data||[];
+    $('#paymentHint').text(paymentData.enabled?'在线支付支持安全签名回调；订单完成后自动到账。':'网站尚未启用在线支付，可使用充值卡密。');
+    $('#paymentPlans').html(paymentPlans.length?paymentPlans.map(function(plan){return '<div style="padding:12px;border:1px solid var(--bd-color,#e5e7eb);border-radius:9px"><strong>'+U.esc(plan.name)+'</strong><div style="margin:6px 0;color:var(--tx-mute,#777)">'+(plan.type==='vip'?'VIP '+Number(plan.vip_days)+' 天':Number(plan.points)+' 积分')+'</div><div>¥ '+(Number(plan.amount_cents)/100).toFixed(2)+'</div><button type="button" data-payment-plan="'+U.esc(plan.code)+'" style="margin-top:8px;padding:7px 12px;border:0;border-radius:6px;background:var(--hl-site,#09f);color:#fff;cursor:pointer">立即支付</button></div>';}).join(''):'<div class="sub">暂无在线支付套餐</div>');
+    var paymentStates={pending:'待支付',paid:'已支付',expired:'已过期',cancelled:'已取消',refunded:'已退款'};
+    $('#paymentOrders').html(paymentItems.length?'<strong>最近在线支付订单</strong>'+paymentItems.slice(0,5).map(function(item){return '<div style="padding:5px 0;border-bottom:1px solid var(--bd-color,#eee)">订单 '+U.esc(item.order_code)+' · '+(paymentStates[item.status]||U.esc(item.status))+' · ¥ '+(Number(item.amount_cents)/100).toFixed(2)+'</div>';}).join(''):'');
+    var notificationData=results[9].data||{},notifications=notificationData.list||[];
+    $('#notificationSummary').text('未读通知 '+Number(notificationData.unread||0)+' 条');
+    $('#notificationList').html(notifications.length?notifications.map(function(item){var url=String(item.target_url||'');var title=U.esc(item.title||'站内通知');var content='<div style="padding:10px 0;border-bottom:1px solid var(--bd-color,#eee);'+(item.read_at?'opacity:.65':'')+'"><strong>'+title+'</strong><span style="margin-left:8px;color:var(--tx-mute,#888);font-size:.8rem">'+new Date(Number(item.created_at||0)*1000).toLocaleString()+'</span><div style="margin-top:4px;white-space:pre-wrap">'+U.esc(item.body||'')+'</div>'+(url?'<a href="'+U.esc(url)+'" style="display:inline-block;margin-top:5px;color:var(--hl-site,#09f)">查看</a>':'')+'</div>';return content;}).join(''):'<div class="sub">暂无通知</div>');
+    var walletData=results[10].data||{},withdrawals=walletData.withdrawals||[],withdrawalStates={pending:'待审核',approved:'通过待打款',rejected:'已驳回并退款',paid:'已打款'};
+    $('#walletBalance').text('可用余额 ¥ '+(Number(walletData.balance_cents||0)/100).toFixed(2));
+    $('#withdrawalList').html(withdrawals.length?'<strong>提现记录</strong>'+withdrawals.map(function(item){return '<div style="padding:6px 0;border-bottom:1px solid var(--bd-color,#eee)">¥ '+(Number(item.amount_cents||0)/100).toFixed(2)+' · '+(withdrawalStates[item.status]||U.esc(item.status))+' · '+U.esc(item.payout_method)+' · '+U.esc(item.created_at?new Date(item.created_at*1000).toLocaleString():'')+(item.note?' · '+U.esc(item.note):'')+'</div>';}).join(''):'');
+    var feed=results[11].data||[];
+    var followedUsers=new Set(follows.filter(function(item){return Number(item.follow_mid)===0;}).map(function(item){return Number(item.follow_rid);}));
+    $('#memberFeed').html(feed.length?feed.map(function(item){var followButton=followedUsers.has(Number(item.user_id))?'已关注':'关注';return '<div style="padding:10px 0;border-bottom:1px solid var(--bd-color,#eee)"><strong>'+U.esc(item.user_nick||item.user_name||'会员')+'</strong> <button type="button" data-follow-member="'+Number(item.user_id)+'" style="border:0;background:none;color:var(--hl-site,#09f);cursor:pointer">'+followButton+'</button><span style="margin-left:8px;color:var(--tx-mute,#888);font-size:.8rem">'+new Date(Number(item.created_at||0)*1000).toLocaleString()+'</span><div style="margin:6px 0;white-space:pre-wrap">'+U.esc(item.content||'')+'</div><button type="button" data-like-post="'+Number(item.post_id)+'" style="padding:4px 9px;cursor:pointer">'+(Number(item.liked)?'已赞':'点赞')+' · '+Number(item.like_count||0)+'</button></div>';}).join(''):'<div class="sub">暂无可见动态</div>');
+    $('#sessionList').html(sessions.length?sessions.map(function(item){var stamp=item.last_seen_at||item.created_at;return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--bd-color,#eee);"><div style="min-width:0;"><strong>'+U.esc(item.user_agent||'未知设备')+'</strong> · '+(item.is_current?'<span style="color:#059669">当前设备</span>':'其他设备')+'<div>'+new Date(stamp*1000).toLocaleString()+'</div></div><button type="button" data-revoke-session="'+U.esc(item.session_id)+'" data-current="'+(item.is_current?1:0)+'" style="padding:5px 9px;cursor:pointer;">退出</button></div>';}).join(''):'暂无有效登录设备');
     $('#mallSeckill').html(campaigns.length?campaigns.map(function(item){return '<div style="padding:12px;border:1px solid #f4c77a;border-radius:9px;background:linear-gradient(135deg,#fffaf0,#fff)"><strong>'+U.esc(item.campaign_name)+'</strong><p style="margin:6px 0">'+U.esc(item.goods_name)+'</p><div>秒杀价 ¥ '+Number(item.sale_price||0).toFixed(2)+' · 库存 '+Number(item.inventory||0)+'</div><button type="button" data-buy-seckill="'+Number(item.campaign_id)+'" data-goods-id="'+Number(item.goods_id)+'" style="margin-top:8px;padding:6px 12px;border:0;border-radius:6px;background:#e99825;color:#fff;cursor:pointer">立即秒杀</button></div>';}).join(''):'<div class="sub">当前没有进行中的秒杀活动</div>');
     $('#mallGoods').html(goods.length?goods.map(function(item){var price=Number(item.price||0),options=availableCoupons.filter(function(coupon){return price>0&&price>=Number(coupon.min_spend||0);}).map(function(coupon){var discount=coupon.discount_type==='percent'?Number(coupon.discount_value)+'% 折扣':'减 ¥'+Number(coupon.discount_value).toFixed(2);return '<option value="'+Number(coupon.user_coupon_id)+'">'+U.esc(coupon.coupon_name)+' · '+discount+'</option>';}).join('');var couponSelect=options?'<label style="display:block;margin-top:8px;font-size:.85rem">优惠券 <select id="mallCoupon_'+Number(item.goods_id)+'" style="max-width:100%;padding:5px"><option value="">不使用</option>'+options+'</select></label>':'';return '<div style="padding:12px;border:1px solid var(--bd-color,#eee);border-radius:9px"><strong>'+U.esc(item.goods_name)+'</strong><p style="margin:6px 0;color:var(--tx-mute,#777)">'+U.esc(item.goods_desc||'')+'</p><div>积分 '+Number(item.points||0)+' · ¥ '+price.toFixed(2)+' · 库存 '+Number(item.inventory||0)+'</div>'+couponSelect+'<button type="button" data-buy-goods="'+item.goods_id+'" style="margin-top:8px;padding:6px 12px;border:0;border-radius:6px;background:var(--hl-site,#09f);color:#fff;cursor:pointer">下单</button></div>';}).join(''):'暂无上架商品');
     var orders=results[4].data||[];
@@ -381,6 +709,21 @@ function loadLogs() {
       );
     });
     Interact.lazy(list[0]);
+  });
+}
+
+function loadProgress() {
+  memberRequest('/api/user/progress?limit=30', 'GET').then(function (result) {
+    var list = result.data || [];
+    $('#progressList').html(list.length ? list.map(function (item) {
+      var duration = Number(item.duration_seconds || 0);
+      var position = Number(item.position_seconds || 0);
+      var percent = duration > 0 ? Math.min(100, Math.floor(position * 100 / duration)) : 0;
+      var label = item.episode_name || '继续播放';
+      return '<a href="/play.html?id=' + Number(item.vod_id) + '&sid=' + Number(item.play_sid) + '&nid=' + Number(item.play_nid) + '" style="display:block;padding:12px;border:1px solid var(--bd-color,#eee);border-radius:8px;text-decoration:none;color:inherit">' +
+        '<strong>' + U.esc(item.vod_name || '影视内容') + '</strong><div style="font-size:.85rem;color:var(--tx-mute,#777);margin:5px 0">' + U.esc(label) + ' · ' + Math.floor(position / 60) + ' 分钟</div>' +
+        '<div style="height:4px;background:var(--bd-color,#eee);border-radius:5px"><i style="display:block;width:' + percent + '%;height:4px;background:var(--hl-site,#09f);border-radius:5px"></i></div></a>';
+    }).join('') : '<div class="hl-empty">登录后播放会自动同步进度</div>');
   });
 }
 </script>
