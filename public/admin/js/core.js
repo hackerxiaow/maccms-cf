@@ -30,9 +30,9 @@
       { key: 'promotion', name: '站点推广', icon: '↗', routes: ['ads', 'urlsend'] }
     ] },
     { key: 'live', name: '直播管理', permission: 'ops', routes: ['live'], groups: [{ key: 'live', name: '直播频道', icon: '▹', routes: ['live'] }] },
-    { key: 'system', name: '系统管理', permission: 'system', routes: ['theme', 'tools', 'analytics', 'audit', 'apidoc', 'database', 'config', 'accounts', 'media', 'quality', 'resources', 'translations', 'ai', 'tasks', 'monitor'], groups: [
+    { key: 'system', name: '系统管理', permission: 'system', routes: ['theme', 'sites', 'tools', 'analytics', 'audit', 'apidoc', 'database', 'pages', 'config', 'accounts', 'media', 'quality', 'resources', 'translations', 'ai', 'tasks', 'monitor'], groups: [
       { key: 'settings', name: '系统设置', icon: '⚙', routes: ['config', 'accounts', 'database', 'apidoc'] },
-      { key: 'content-ops', name: '模板与内容运维', icon: '◈', routes: ['theme', 'tools', 'media', 'quality', 'resources', 'translations', 'ai'] },
+      { key: 'content-ops', name: '模板与内容运维', icon: '◈', routes: ['theme', 'sites', 'pages', 'tools', 'media', 'quality', 'resources', 'translations', 'ai'] },
       { key: 'site-ops', name: '统计与运行监控', icon: '▥', routes: ['analytics', 'audit', 'tasks', 'monitor'] }
     ] }
   ];
@@ -58,6 +58,8 @@
     audit: ['后台操作日志', '管理员写操作、响应状态与来源记录', '▤'],
     apidoc: ['开放接口文档', 'MacCMS v8/v10 Provide、REST 与直播接口说明', '⌘'],
     database: ['数据库维护', 'D1 表行数、JSON 备份导出与分批还原', '▦'],
+    pages: ['静态页面', '创建可缓存的隐私政策、服务条款及站点说明页面', '▤'],
+    sites: ['多域名站群', '为不同域名配置独立站点资料和桌面/移动主题', '◎'],
     accounts: ['管理员与权限', '多管理员账号、角色权限和后台操作边界', '♙'],
     media: ['媒体库', '管理 R2、Telegram 和 Telegraph 附件及引用地址', '▧'],
     quality: ['内容质检', '按可配置规则扫描标题、简介、播放源和图片字段', '✓'],
@@ -416,6 +418,21 @@
       document.getElementById('modalOkBtn').onclick = function () {
         if (onOk) onOk();
       };
+    },
+
+    pickMedia: async function (inputId) {
+      var result = await this.req('/cloud/media?page=1&limit=60');
+      if (result.code !== 0) { this.toast(result.msg || '读取媒体库失败', true); return; }
+      var rows = (result.data || {}).list || [];
+      var body = rows.length ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;max-height:60vh;overflow:auto">' + rows.map(function (item) {
+        return '<button type="button" data-pick-media="' + App.esc(item.public_url) + '" style="min-width:0;padding:6px;border:1px solid var(--border-color,#ddd);border-radius:8px;background:var(--surface-1,#fff);cursor:pointer"><img src="' + App.esc(item.public_url) + '" alt="" loading="lazy" style="width:100%;height:95px;object-fit:contain"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">' + App.esc(item.file_name || item.public_url) + '</span></button>';
+      }).join('') + '</div>' : '<div class="empty">媒体库没有图片，请先到附件管理上传。</div>';
+      this.modal('从媒体库选择图片', body, function () { App.closeModal(); }, '完成');
+      document.querySelectorAll('[data-pick-media]').forEach(function (button) { button.onclick = function () {
+        var input = document.getElementById(inputId);
+        if (input) { input.value = button.dataset.pickMedia || ''; input.dispatchEvent(new Event('input', { bubbles: true })); }
+        App.closeModal();
+      }; });
     },
 
     closeModal: function () {

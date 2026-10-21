@@ -35,6 +35,7 @@
           <label style="display:block;font-size:.85rem;margin-bottom:4px;">登录密码</label>
           <input type="password" id="loginPwd" placeholder="请输入密码" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
         </div>
+        <div id="authTurnstileLogin" style="margin:10px 0"></div>
         <button type="button" class="hl-btn-conch hl-bg-conch" id="btnDoLogin" style="width:100%;padding:11px;font-weight:700;border:none;border-radius:6px;color:#fff;cursor:pointer;">立即登录</button>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
           <button type="button" id="btnSendGuestVerify" style="padding:7px 11px;border:1px solid var(--bd-color,#ddd);border-radius:6px;background:none;cursor:pointer;">发送邮箱验证邮件</button>
@@ -74,6 +75,7 @@
           <label style="display:block;font-size:.85rem;margin-bottom:4px;">邀请码（选填）</label>
           <input type="text" id="regInviteCode" maxlength="24" placeholder="填写邀请人的邀请码" style="width:100%;padding:10px 14px;border:1px solid var(--bd-color,#ddd);border-radius:6px;box-sizing:border-box;">
         </div>
+        <div id="authTurnstileRegister" style="margin:10px 0"></div>
         <button type="button" class="hl-btn-conch hl-bg-conch" id="btnDoRegister" style="width:100%;padding:11px;font-weight:700;border:none;border-radius:6px;color:#fff;cursor:pointer;">立即注册账号</button>
       </div>
     </div>
@@ -214,7 +216,8 @@
       <div class="hl-row-box" style="padding:20px;border-radius:12px;background:var(--bg-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,0.06);margin-top:20px;">
         <h3 style="margin:0 0 10px;font-size:1.05rem;">会员动态</h3>
         <textarea id="postContent" maxlength="1000" placeholder="分享一条动态（最多 1000 字）" style="display:block;width:100%;min-height:78px;box-sizing:border-box;padding:10px;border:1px solid var(--bd-color,#ddd);border-radius:7px;"></textarea>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;"><select id="postVisibility" style="padding:7px 10px;border:1px solid var(--bd-color,#ddd);border-radius:6px;"><option value="public">公开</option><option value="followers">仅关注者</option><option value="private">仅自己</option></select><button type="button" id="btnPublishPost" style="padding:7px 13px;border:0;border-radius:6px;background:var(--hl-site,#09f);color:#fff;cursor:pointer;">发布动态</button><span class="sub">动态可能需要管理员审核。</span></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;"><select id="postVisibility" style="padding:7px 10px;border:1px solid var(--bd-color,#ddd);border-radius:6px;"><option value="public">公开</option><option value="followers">仅关注者</option><option value="private">仅自己</option></select><label style="padding:7px 10px;border:1px solid var(--bd-color,#ddd);border-radius:6px;cursor:pointer;">添加图片<input id="postImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple style="display:none"></label><button type="button" id="btnPublishPost" style="padding:7px 13px;border:0;border-radius:6px;background:var(--hl-site,#09f);color:#fff;cursor:pointer;">发布动态</button><span class="sub">最多 4 张，每张不超过 4 MB；动态可能需要管理员审核。</span></div>
+        <div id="postImagePreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"></div>
         <div id="memberFeed" style="margin-top:12px;"></div>
       </div>
 
@@ -245,21 +248,43 @@
 
 <script src="/static/theme/js/jquery.min.js"></script>
 <script src="/static/theme/theme.js"></script>
-<script src="/static/theme/layout.js"></script>
+<script src="/static/theme/layout.js?v=20261021d"></script>
 <script>
 var USER_TOKEN_KEY = 'maccms_user_token';
 var token = localStorage.getItem(USER_TOKEN_KEY) || '';
 var currentLogType = 'history';
+var postAttachmentUrls = [];
+var turnstileEnabled = false;
+var turnstileWidgetIds = { login: null, register: null };
+var turnstileTokens = { login: '', register: '' };
+var paymentReturnChecked = false;
 
 $(function () {
   var invitedBy = new URLSearchParams(window.location.search).get('invite');
   if (invitedBy) $('#regInviteCode').val(invitedBy.slice(0, 24));
+  initTurnstile();
   Theme.init().then(function () {
     Layout.render('user');
     checkAuthState();
     bindEvents();
   });
 });
+
+function initTurnstile() {
+  fetch('/api/security/config').then(function(response){return response.json();}).then(function(result){
+    var config=result.data||{};if(result.code!==0||!config.enabled||!config.site_key)return;
+    turnstileEnabled=true;
+    var renderWidgets=function(){['login','register'].forEach(function(name){var target=document.getElementById('authTurnstile'+(name==='login'?'Login':'Register'));if(!target||turnstileWidgetIds[name]!==null)return;turnstileWidgetIds[name]=window.turnstile.render(target,{sitekey:config.site_key,callback:function(value){turnstileTokens[name]=value;},'expired-callback':function(){turnstileTokens[name]='';},'error-callback':function(){turnstileTokens[name]='';}});});};
+    if(window.turnstile)renderWidgets();else{var script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;script.defer=true;script.onload=renderWidgets;document.head.appendChild(script);}
+  }).catch(function(){});
+}
+
+function consumeTurnstileToken(name) {
+  if(!turnstileEnabled)return '';
+  var value=turnstileTokens[name]||'';turnstileTokens[name]='';
+  if(window.turnstile&&turnstileWidgetIds[name]!==null)window.turnstile.reset(turnstileWidgetIds[name]);
+  return value;
+}
 
 function checkAuthState() {
   token = localStorage.getItem(USER_TOKEN_KEY) || '';
@@ -280,6 +305,7 @@ function checkAuthState() {
       loadProgress();
       loadMemberExtras();
       loadInviteInfo();
+      checkPaymentReturn();
     } else {
       localStorage.removeItem(USER_TOKEN_KEY);
       $('#guestBox').show();
@@ -289,6 +315,25 @@ function checkAuthState() {
     $('#guestBox').show();
     $('#userBox').hide();
   });
+}
+
+function checkPaymentReturn() {
+  if(paymentReturnChecked)return;
+  var params=new URLSearchParams(location.search),order=params.get('order');
+  if(params.get('payment')!=='return'||!order)return;
+  paymentReturnChecked=true;
+  var attempts=0;
+  $('#paymentHint').text('正在与易支付核对订单状态…');
+  function poll(){
+    attempts++;
+    memberRequest('/api/user/payment/reconcile/'+encodeURIComponent(order),'GET').then(function(result){
+      var status=result.data&&result.data.status;
+      if(status==='paid'){ $('#paymentHint').text('支付成功，积分或会员权益已到账。');loadMemberExtras();history.replaceState(null,'','/user.html');return; }
+      if(status==='refunded'){ $('#paymentHint').text('该订单已退款。');loadMemberExtras();history.replaceState(null,'','/user.html');return; }
+      if(attempts<5)setTimeout(poll,2200);else{$('#paymentHint').text('订单仍在处理中；支付服务商通知到达后会自动更新。');loadMemberExtras();history.replaceState(null,'','/user.html');}
+    }).catch(function(){if(attempts<5)setTimeout(poll,2200);else $('#paymentHint').text('暂时无法确认支付结果，请稍后刷新会员中心。');});
+  }
+  poll();
 }
 
 function renderProfile(u) {
@@ -393,7 +438,8 @@ function bindEvents() {
     var p = $('#loginPwd').val().trim();
     if (!u || !p) { alert('请输入账号与密码'); return; }
 
-    API.post('/api/user/login', { username: u, password: p }).then(function (j) {
+    var turnstileToken=consumeTurnstileToken('login');if(turnstileEnabled&&!turnstileToken){alert('请先完成验证码验证');return;}
+    API.post('/api/user/login', { username: u, password: p, turnstile_token: turnstileToken }).then(function (j) {
       if (j.code === 0) {
         localStorage.setItem(USER_TOKEN_KEY, j.data.token);
         checkAuthState();
@@ -465,7 +511,8 @@ function bindEvents() {
     var n = $('#regNick').val().trim();
     if (!u || !p) { alert('请输入用户名与密码'); return; }
 
-    API.post('/api/user/register', { username: u, password: p, email: $('#regEmail').val().trim(), nick: n, invite_code: $('#regInviteCode').val().trim() }).then(function (j) {
+    var turnstileToken=consumeTurnstileToken('register');if(turnstileEnabled&&!turnstileToken){alert('请先完成验证码验证');return;}
+    API.post('/api/user/register', { username: u, password: p, email: $('#regEmail').val().trim(), nick: n, invite_code: $('#regInviteCode').val().trim(), turnstile_token: turnstileToken }).then(function (j) {
       if (j.code === 0) {
         if (j.data && j.data.requires_email_verification) {
           $('#loginUser').val(u); $('#loginPwd').val(p); $('#guestVerifyEmail').val($('#regEmail').val().trim()); $('#guestVerifyBox').show();
@@ -588,10 +635,15 @@ function bindEvents() {
 
   $('#btnPublishPost').on('click', function () {
     var content=$('#postContent').val().trim();if(!content){alert('请输入动态内容');return;}
-    memberRequest('/api/user/posts','POST',{content:content,visibility:$('#postVisibility').val()}).then(function(result){alert(result.msg||'动态已提交');if(result.code===0){$('#postContent').val('');loadMemberExtras();}});
+    memberRequest('/api/user/posts','POST',{content:content,visibility:$('#postVisibility').val(),attachments:postAttachmentUrls}).then(function(result){alert(result.msg||'动态已提交');if(result.code===0){$('#postContent').val('');postAttachmentUrls=[];$('#postImagePreview').empty();loadMemberExtras();}});
   });
 
+  $('#postImageInput').on('change',async function(){var files=Array.from(this.files||[]);this.value='';for(var file of files){if(postAttachmentUrls.length>=4){alert('最多添加 4 张图片');break;}var form=new FormData();form.append('file',file);try{var response=await fetch('/api/user/posts/upload',{method:'POST',headers:{'Authorization':'Bearer '+token},body:form});var result=await response.json();if(result.code!==0){alert(result.msg||'上传失败');continue;}var url=result.data.url;postAttachmentUrls.push(url);$('#postImagePreview').append('<img src="'+U.esc(url)+'" alt="动态图片预览" style="width:76px;height:76px;object-fit:cover;border-radius:7px">');}catch(error){alert('图片上传失败');}}});
+
   $('#memberFeed').on('click','[data-like-post]',function(){var button=$(this),postId=Number(button.data('like-post'));memberRequest('/api/user/posts/'+postId+'/like','POST',{}).then(function(result){if(result.code===0)loadMemberExtras();else alert(result.msg||'操作失败');});});
+  $('#memberFeed').on('click','[data-comment-post]',async function(){var postId=Number($(this).data('comment-post'));var current=await memberRequest('/api/user/posts/'+postId+'/comments','GET');var comments=current.data||[];var container=$('#postComments_'+postId);container.html(comments.length?comments.map(function(item){return '<div style="padding:4px 0"><strong>'+U.esc(item.user_nick||item.user_name||'会员')+'</strong>：'+U.esc(item.content)+'</div>';}).join(''):'<div class="sub">暂无评论</div>');var content=prompt('写下评论（最多 500 字）');if(content===null||!content.trim())return;var result=await memberRequest('/api/user/posts/'+postId+'/comments','POST',{content:content});alert(result.msg||'评论已提交');if(result.code===0){var refreshed=await memberRequest('/api/user/posts/'+postId+'/comments','GET');container.html((refreshed.data||[]).map(function(item){return '<div style="padding:4px 0"><strong>'+U.esc(item.user_nick||item.user_name||'会员')+'</strong>：'+U.esc(item.content)+'</div>';}).join('')||'<div class="sub">暂无评论</div>');}});
+  $('#memberFeed').on('click','[data-report-post]',async function(){var postId=Number($(this).data('report-post'));var reason=prompt('请描述举报原因（可留空）');if(reason===null)return;var result=await memberRequest('/api/user/posts/'+postId+'/report','POST',{reason:reason});alert(result.msg||'举报已提交');});
+  $('#memberFeed').on('click','[data-delete-post]',async function(){var postId=Number($(this).data('delete-post'));if(!confirm('删除这条动态？评论、点赞和图片引用也会移除。'))return;var result=await memberRequest('/api/user/posts/'+postId,'DELETE',{});alert(result.msg||'删除完成');if(result.code===0)loadMemberExtras();});
   $('#memberFeed').on('click','[data-follow-member]',function(){var button=$(this),id=Number(button.data('follow-member'));memberRequest('/api/user/follows/toggle','POST',{model:'user',id:id}).then(function(result){if(result.code===0)loadMemberExtras();else alert(result.msg||'操作失败');});});
 
   $('#btnSendPm').on('click', function () {
@@ -603,17 +655,21 @@ function bindEvents() {
   $('#mallGoods').on('click','[data-buy-goods]',function(){
     var button=$(this),goodsId=Number(button.data('buy-goods'));
     var couponId=Number($('#mallCoupon_'+goodsId).val())||0;
-    if(!confirm('确认创建订单？订单会扣除页面显示的积分；现金部分需管理员线下核验。待核款订单可取消并退回积分和优惠券。'))return;
+    if(!confirm('确认创建订单？积分部分会先扣除；现金部分可使用易支付完成付款，未付款订单可取消。'))return;
+    var paymentWindow=window.open('about:blank','_blank');
     button.prop('disabled',true);
-    memberRequest('/api/mall/orders','POST',{goods_id:goodsId,quantity:1,user_coupon_id:couponId}).then(function(result){alert(result.msg||'订单已创建');if(result.code===0){checkAuthState();loadMemberExtras();}}).finally(function(){button.prop('disabled',false);});
+    memberRequest('/api/mall/orders','POST',{goods_id:goodsId,quantity:1,user_coupon_id:couponId}).then(function(result){var url=result.data&&result.data.checkout_url;if(result.code===0&&url){if(paymentWindow)paymentWindow.location.href=url;else location.href=url;}else{if(paymentWindow)paymentWindow.close();alert((result.data&&result.data.payment_error)||result.msg||'订单已创建');}if(result.code===0){checkAuthState();loadMemberExtras();}}).finally(function(){button.prop('disabled',false);});
   });
 
   $('#mallSeckill').on('click','[data-buy-seckill]',function(){
     var button=$(this),campaignId=Number(button.data('buy-seckill')),goodsId=Number(button.data('goods-id'));
-    if(!confirm('确认按秒杀价创建订单？活动库存会立即锁定，待核款订单可取消。'))return;
+    if(!confirm('确认按秒杀价创建订单？活动库存会立即锁定；现金部分可使用易支付完成付款。'))return;
+    var paymentWindow=window.open('about:blank','_blank');
     button.prop('disabled',true);
-    memberRequest('/api/mall/orders','POST',{goods_id:goodsId,quantity:1,seckill_id:campaignId}).then(function(result){alert(result.msg||'订单已创建');if(result.code===0){checkAuthState();loadMemberExtras();}}).finally(function(){button.prop('disabled',false);});
+    memberRequest('/api/mall/orders','POST',{goods_id:goodsId,quantity:1,seckill_id:campaignId}).then(function(result){var url=result.data&&result.data.checkout_url;if(result.code===0&&url){if(paymentWindow)paymentWindow.location.href=url;else location.href=url;}else{if(paymentWindow)paymentWindow.close();alert((result.data&&result.data.payment_error)||result.msg||'订单已创建');}if(result.code===0){checkAuthState();loadMemberExtras();}}).finally(function(){button.prop('disabled',false);});
   });
+
+  $('#mallOrders').on('click','[data-pay-order]',function(){var button=$(this),orderId=Number(button.data('pay-order')),paymentWindow=window.open('about:blank','_blank');button.prop('disabled',true);memberRequest('/api/mall/orders/'+orderId+'/pay','POST',{}).then(function(result){var url=result.data&&result.data.checkout_url;if(result.code===0&&url){if(paymentWindow)paymentWindow.location.href=url;else location.href=url;}else{if(paymentWindow)paymentWindow.close();alert(result.msg||'无法生成付款链接');}}).finally(function(){button.prop('disabled',false);});});
 
   $('#mallOrders').on('click','[data-cancel-order]',function(){
     var button=$(this),orderId=Number(button.data('cancel-order'));
@@ -677,13 +733,13 @@ function loadMemberExtras(){
     $('#withdrawalList').html(withdrawals.length?'<strong>提现记录</strong>'+withdrawals.map(function(item){return '<div style="padding:6px 0;border-bottom:1px solid var(--bd-color,#eee)">¥ '+(Number(item.amount_cents||0)/100).toFixed(2)+' · '+(withdrawalStates[item.status]||U.esc(item.status))+' · '+U.esc(item.payout_method)+' · '+U.esc(item.created_at?new Date(item.created_at*1000).toLocaleString():'')+(item.note?' · '+U.esc(item.note):'')+'</div>';}).join(''):'');
     var feed=results[11].data||[];
     var followedUsers=new Set(follows.filter(function(item){return Number(item.follow_mid)===0;}).map(function(item){return Number(item.follow_rid);}));
-    $('#memberFeed').html(feed.length?feed.map(function(item){var followButton=followedUsers.has(Number(item.user_id))?'已关注':'关注';return '<div style="padding:10px 0;border-bottom:1px solid var(--bd-color,#eee)"><strong>'+U.esc(item.user_nick||item.user_name||'会员')+'</strong> <button type="button" data-follow-member="'+Number(item.user_id)+'" style="border:0;background:none;color:var(--hl-site,#09f);cursor:pointer">'+followButton+'</button><span style="margin-left:8px;color:var(--tx-mute,#888);font-size:.8rem">'+new Date(Number(item.created_at||0)*1000).toLocaleString()+'</span><div style="margin:6px 0;white-space:pre-wrap">'+U.esc(item.content||'')+'</div><button type="button" data-like-post="'+Number(item.post_id)+'" style="padding:4px 9px;cursor:pointer">'+(Number(item.liked)?'已赞':'点赞')+' · '+Number(item.like_count||0)+'</button></div>';}).join(''):'<div class="sub">暂无可见动态</div>');
+    $('#memberFeed').html(feed.length?feed.map(function(item){var followButton=followedUsers.has(Number(item.user_id))?'已关注':'关注',postId=Number(item.post_id);var images=String(item.attachment_urls||'').split('\n').filter(Boolean).map(function(url){return '<a href="'+U.esc(url)+'" target="_blank" rel="noopener"><img src="'+U.esc(url)+'" alt="动态图片" loading="lazy" style="max-width:160px;max-height:160px;border-radius:8px;object-fit:cover;margin:4px 4px 4px 0"></a>';}).join('');var ownerAction=Number(item.is_mine)?'<button type="button" data-delete-post="'+postId+'" style="padding:4px 9px;cursor:pointer">删除</button>':'<button type="button" data-report-post="'+postId+'" style="padding:4px 9px;cursor:pointer">举报</button>';return '<div style="padding:10px 0;border-bottom:1px solid var(--bd-color,#eee)"><strong>'+U.esc(item.user_nick||item.user_name||'会员')+'</strong> <button type="button" data-follow-member="'+Number(item.user_id)+'" style="border:0;background:none;color:var(--hl-site,#09f);cursor:pointer">'+followButton+'</button><span style="margin-left:8px;color:var(--tx-mute,#888);font-size:.8rem">'+new Date(Number(item.created_at||0)*1000).toLocaleString()+'</span><div style="margin:6px 0;white-space:pre-wrap">'+U.esc(item.content||'')+'</div><div>'+images+'</div><button type="button" data-like-post="'+postId+'" style="padding:4px 9px;cursor:pointer">'+(Number(item.liked)?'已赞':'点赞')+' · '+Number(item.like_count||0)+'</button> <button type="button" data-comment-post="'+postId+'" style="padding:4px 9px;cursor:pointer">评论 · '+Number(item.comment_count||0)+'</button> '+ownerAction+'<div id="postComments_'+postId+'" style="margin-top:6px"></div></div>';}).join(''):'<div class="sub">暂无可见动态</div>');
     $('#sessionList').html(sessions.length?sessions.map(function(item){var stamp=item.last_seen_at||item.created_at;return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--bd-color,#eee);"><div style="min-width:0;"><strong>'+U.esc(item.user_agent||'未知设备')+'</strong> · '+(item.is_current?'<span style="color:#059669">当前设备</span>':'其他设备')+'<div>'+new Date(stamp*1000).toLocaleString()+'</div></div><button type="button" data-revoke-session="'+U.esc(item.session_id)+'" data-current="'+(item.is_current?1:0)+'" style="padding:5px 9px;cursor:pointer;">退出</button></div>';}).join(''):'暂无有效登录设备');
     $('#mallSeckill').html(campaigns.length?campaigns.map(function(item){return '<div style="padding:12px;border:1px solid #f4c77a;border-radius:9px;background:linear-gradient(135deg,#fffaf0,#fff)"><strong>'+U.esc(item.campaign_name)+'</strong><p style="margin:6px 0">'+U.esc(item.goods_name)+'</p><div>秒杀价 ¥ '+Number(item.sale_price||0).toFixed(2)+' · 库存 '+Number(item.inventory||0)+'</div><button type="button" data-buy-seckill="'+Number(item.campaign_id)+'" data-goods-id="'+Number(item.goods_id)+'" style="margin-top:8px;padding:6px 12px;border:0;border-radius:6px;background:#e99825;color:#fff;cursor:pointer">立即秒杀</button></div>';}).join(''):'<div class="sub">当前没有进行中的秒杀活动</div>');
     $('#mallGoods').html(goods.length?goods.map(function(item){var price=Number(item.price||0),options=availableCoupons.filter(function(coupon){return price>0&&price>=Number(coupon.min_spend||0);}).map(function(coupon){var discount=coupon.discount_type==='percent'?Number(coupon.discount_value)+'% 折扣':'减 ¥'+Number(coupon.discount_value).toFixed(2);return '<option value="'+Number(coupon.user_coupon_id)+'">'+U.esc(coupon.coupon_name)+' · '+discount+'</option>';}).join('');var couponSelect=options?'<label style="display:block;margin-top:8px;font-size:.85rem">优惠券 <select id="mallCoupon_'+Number(item.goods_id)+'" style="max-width:100%;padding:5px"><option value="">不使用</option>'+options+'</select></label>':'';return '<div style="padding:12px;border:1px solid var(--bd-color,#eee);border-radius:9px"><strong>'+U.esc(item.goods_name)+'</strong><p style="margin:6px 0;color:var(--tx-mute,#777)">'+U.esc(item.goods_desc||'')+'</p><div>积分 '+Number(item.points||0)+' · ¥ '+price.toFixed(2)+' · 库存 '+Number(item.inventory||0)+'</div>'+couponSelect+'<button type="button" data-buy-goods="'+item.goods_id+'" style="margin-top:8px;padding:6px 12px;border:0;border-radius:6px;background:var(--hl-site,#09f);color:#fff;cursor:pointer">下单</button></div>';}).join(''):'暂无上架商品');
     var orders=results[4].data||[];
     var orderStates={0:'待核款',1:'已确认/待履约',2:'已完成',3:'已取消'};
-    $('#mallOrders').html(orders.length?orders.map(function(item){var cancel=Number(item.status)===0?' <button type="button" data-cancel-order="'+Number(item.mall_order_id)+'" style="margin-left:8px">取消订单</button>':'';return '<div style="padding:7px 0;border-bottom:1px solid var(--bd-color,#eee)">订单 '+U.esc(item.order_code)+' · '+U.esc(item.goods_name||'商品已下架')+' · '+(orderStates[Number(item.status)]||'未知状态')+' · ¥ '+Number(item.total_price||0).toFixed(2)+' · '+Number(item.total_points||0)+' 积分'+cancel+'</div>';}).join(''):'暂无商城订单');
+    $('#mallOrders').html(orders.length?orders.map(function(item){var cancel=Number(item.status)===0?' <button type="button" data-cancel-order="'+Number(item.mall_order_id)+'" style="margin-left:8px">取消订单</button>':'';var pay=Number(item.status)===0&&Number(item.total_price)>0&&paymentData.enabled?' <button type="button" data-pay-order="'+Number(item.mall_order_id)+'" style="margin-left:8px">继续付款</button>':'';return '<div style="padding:7px 0;border-bottom:1px solid var(--bd-color,#eee)">订单 '+U.esc(item.order_code)+' · '+U.esc(item.goods_name||'商品已下架')+' · '+(orderStates[Number(item.status)]||'未知状态')+' · ¥ '+Number(item.total_price||0).toFixed(2)+' · '+Number(item.total_points||0)+' 积分'+pay+cancel+'</div>';}).join(''):'暂无商城订单');
   });
 }
 

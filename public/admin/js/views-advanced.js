@@ -65,7 +65,7 @@
     var body = '<div class="row2">' + App.field('频道名称 *', App.input('liveName', item.live_name)) +
       App.field('播放地址 *', App.input('liveUrl', item.live_url, 'https://example.com/live.m3u8')) + '</div>' +
       '<div class="row3">' + App.field('频道分类', App.select('liveCategory', categoryOptions, item.live_category_id || 0)) +
-      App.field('Logo 图片地址', App.input('liveLogo', item.live_logo)) + App.field('排序', App.input('liveSort', item.live_sort || 0, '', 'number')) + '</div>' +
+      App.field('Logo 图片地址', '<div style="display:flex;gap:6px"><input class="admin-input" id="liveLogo" value="' + App.esc(item.live_logo || '') + '" placeholder="图片 URL" style="flex:1;min-width:0"><button type="button" class="action-btn" id="liveLogoPick">选择图片</button></div>') + App.field('排序', App.input('liveSort', item.live_sort || 0, '', 'number')) + '</div>' +
       App.field('频道说明', App.textarea('liveDesc', item.live_desc, 3)) +
       App.field('状态', App.select('liveStatus', [{ value: 1, label: '启用' }, { value: 0, label: '停用' }], item.live_status === 0 ? 0 : 1));
     App.modal(item.live_id ? '编辑直播频道 #' + item.live_id : '新增直播频道', body, async function () {
@@ -76,6 +76,8 @@
       if (result.code === 0) { App.closeModal(); App.toast(result.msg); renderLiveChannels(1); }
       else App.toast(result.msg || '保存失败', true);
     });
+    var logoPick = document.getElementById('liveLogoPick');
+    if (logoPick) logoPick.onclick = function () { App.pickMedia('liveLogo'); };
   }
 
   async function renderLiveCategories() {
@@ -211,13 +213,108 @@
   Views.database = function (host) {
     host.innerHTML = '<div class="help-block" style="margin-bottom:12px">D1 不提供 MySQL 控制台、任意 SQL 执行或本机文件备份。这里按业务数据表导出 JSON；还原按主键覆盖同 ID 记录，每次最多处理 500 行。</div>' +
       '<div class="toolbar"><select class="admin-select" id="backupTable" style="max-width:260px"></select><button class="action-btn" id="refreshTables">刷新表信息</button>' +
-      '<button class="btn-create" id="exportTable">导出 JSON</button><label class="action-btn" for="importFile" style="display:inline-flex;align-items:center">选择备份还原</label><input id="importFile" type="file" accept="application/json,.json" hidden></div>' +
+      '<button class="btn-create" id="exportTable">导出 JSON</button><button class="action-btn" id="backupToR2">压缩快照到 R2</button><label class="action-btn" for="importFile" style="display:inline-flex;align-items:center">选择备份还原</label><input id="importFile" type="file" accept="application/json,.json" hidden></div>' +
+      '<div class="toolbar"><select class="admin-select" id="r2BackupSelect" style="max-width:480px"><option value="">选择 R2 快照</option></select><button class="action-btn" id="refreshR2Backups">刷新 R2 快照</button><button class="action-btn del" id="restoreR2Backup">从 R2 还原所选表</button><span id="r2BackupNotice" class="sub">R2 快照保存在当前 MEDIA_BUCKET 中，每个表最多 10,000 行。</span></div>' +
       '<div id="databaseTableInfo" class="admin-card"><div class="empty">正在读取 D1 表信息…</div></div><div id="databaseNotice" class="help-block"></div>';
     App.on('refreshTables', 'click', loadDatabaseTables);
     App.on('exportTable', 'click', exportTable);
     App.on('importFile', 'change', importTable);
+    App.on('backupToR2', 'click', backupTableToR2);
+    App.on('refreshR2Backups', 'click', loadR2Backups);
+    App.on('restoreR2Backup', 'click', restoreTableFromR2);
     loadDatabaseTables();
+    loadR2Backups();
   };
+
+  async function loadR2Backups() {
+    var select = document.getElementById('r2BackupSelect');
+    if (!select) return;
+    var result = await App.req('/database/r2/backups');
+    if (result.code !== 0) { document.getElementById('r2BackupNotice').textContent = result.msg || 'R2 快照读取失败'; return; }
+    var rows = result.data || [];
+    select.innerHTML = '<option value="">选择 R2 快照</option>' + rows.map(function (item) { return '<option value="' + App.esc(item.key) + '">' + App.esc(item.key) + ' · ' + Number(item.size || 0) + ' bytes</option>'; }).join('');
+    document.getElementById('r2BackupNotice').textContent = 'R2 中有 ' + rows.length + ' 个快照；恢复会覆盖当前表中相同主键的行。';
+  }
+
+  async function backupTableToR2() {
+    var table = App.val('backupTable');
+    if (!table) return;
+    var result = await App.req('/database/r2/backups/' + encodeURIComponent(table), { method: 'POST', body: {} });
+    App.toast(result.msg || 'R2 快照已保存', result.code !== 0);
+    if (result.code === 0) { document.getElementById('databaseNotice').textContent = '快照对象：' + result.data.key + ' · ' + result.data.bytes + ' bytes'; loadR2Backups(); }
+  }
+
+  async function restoreTableFromR2() {
+    var table = App.val('backupTable'), key = App.val('r2BackupSelect');
+    if (!table || !key) { App.toast('请选择数据表和 R2 快照', true); return; }
+    if (!confirm('从该快照覆盖还原「' + table + '」中的同主键记录？')) return;
+    var result = await App.req('/database/r2/restore', { method: 'POST', body: { table: table, key: key } });
+    App.toast(result.msg || 'R2 还原完成', result.code !== 0);
+    if (result.code === 0) { document.getElementById('databaseNotice').textContent = '已还原 ' + result.data.restored + ' 行。'; loadDatabaseTables(); }
+  }
+
+  Views.pages = async function (host) {
+    host.innerHTML = '<div class="admin-card"><div class="card-head"><h3>站点静态页面</h3><button class="btn-create" id="pageAdd">+ 新增页面</button></div><p class="sub">正文按纯文本安全渲染为 HTML，由 D1 保存并在 Worker 边缘缓存。适合隐私政策、服务条款和关于页面。发布后地址为 /page/路径。</p><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>标题</th><th>路径</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="pageRows"><tr><td colspan="5" class="empty">正在加载…</td></tr></tbody></table></div></div>';
+    App.on('pageAdd', 'click', function () { openSitePage(null, host); });
+    await loadSitePages(host);
+  };
+
+  async function loadSitePages(host) {
+    var result = await App.req('/pages'), rows = result.data || [], target = document.getElementById('pageRows');
+    if (!target) return;
+    target.innerHTML = rows.length ? rows.map(function (item) {
+      return '<tr><td><b>' + App.esc(item.title) + '</b></td><td><code>/page/' + App.esc(item.slug) + '</code></td><td>' +
+        (Number(item.status) === 1 ? '<span class="tag green">已发布</span>' : '<span class="tag">草稿</span>') + '</td><td>' + App.fmtTime(item.updated_at) + '</td><td>' +
+        (Number(item.status) === 1 ? '<a class="action-btn" href="/page/' + encodeURIComponent(item.slug) + '" target="_blank" rel="noopener">预览</a> ' : '') +
+        '<button class="action-btn" data-page-edit="' + item.page_id + '">编辑</button> <button class="action-btn del" data-page-delete="' + item.page_id + '">删除</button></td></tr>';
+    }).join('') : '<tr><td colspan="5" class="empty">还没有页面</td></tr>';
+    target.querySelectorAll('[data-page-edit]').forEach(function (button) { button.onclick = function () { openSitePage(rows.find(function (row) { return Number(row.page_id) === Number(button.dataset.pageEdit); }), host); }; });
+    target.querySelectorAll('[data-page-delete]').forEach(function (button) { button.onclick = async function () { if (!confirm('删除此站点页面？')) return; var deleted = await App.req('/pages/' + button.dataset.pageDelete, { method: 'DELETE' }); App.toast(deleted.msg || '操作完成', deleted.code !== 0); loadSitePages(host); }; });
+  }
+
+  function openSitePage(item, host) {
+    item = item || {};
+    var body = '<div class="row2">' + App.field('页面标题', App.input('sitePageTitle', item.title || '')) + App.field('URL 路径（英文）', App.input('sitePageSlug', item.slug || '')) + '</div>' +
+      App.field('SEO 描述', App.input('sitePageDescription', item.description || '')) + App.field('关键词', App.input('sitePageKeywords', item.keywords || '')) +
+      App.field('正文（纯文本，空行分段）', App.textarea('sitePageBody', item.body || '', 14)) +
+      App.field('发布状态', App.select('sitePageStatus', [{ value: 0, label: '草稿' }, { value: 1, label: '已发布' }], item.status == null ? 0 : item.status));
+    App.modal(item.page_id ? '编辑静态页面' : '新建静态页面', body, async function () {
+      var result = await App.req('/pages', { method: 'POST', body: { page_id: item.page_id || 0, title: App.val('sitePageTitle'), slug: App.val('sitePageSlug'),
+        description: App.val('sitePageDescription'), keywords: App.val('sitePageKeywords'), body: App.val('sitePageBody'), status: App.intVal('sitePageStatus') } });
+      if (result.code === 0) { App.closeModal(); App.toast(result.msg); loadSitePages(host); } else App.toast(result.msg || '保存失败', true);
+    });
+  }
+
+  Views.sites = async function (host) {
+    host.innerHTML = '<div class="admin-card"><div class="card-head"><h3>多域名站点与独立主题</h3><button class="btn-create" id="siteHostAdd">+ 添加域名</button></div><p class="sub">同一套 Worker 和 D1 可按访问域名展示不同站点名称、SEO 信息和主题；影片等内容共享数据库。桌面与手机主题覆盖使用主题配置项 JSON，空对象表示继承全局主题。先将域名路由至当前 Cloudflare Worker/Pages。</p><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>域名</th><th>站点</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="siteHostRows"><tr><td colspan="5" class="empty">正在加载…</td></tr></tbody></table></div></div>';
+    App.on('siteHostAdd', 'click', function () { openHostConfig(null, host); });
+    await loadHostConfigs(host);
+  };
+
+  async function loadHostConfigs(host) {
+    var result = await App.req('/sites'), rows = result.data || [], target = document.getElementById('siteHostRows');
+    if (!target) return;
+    target.innerHTML = rows.length ? rows.map(function (item) { return '<tr><td><code>' + App.esc(item.hostname) + '</code></td><td><b>' + App.esc(item.site_name) + '</b><div class="muted">' + App.esc(item.site_url) + '</div></td><td>' +
+      (Number(item.status) === 1 ? '<span class="tag green">启用</span>' : '<span class="tag">停用</span>') + '</td><td>' + App.fmtTime(item.updated_at) + '</td><td>' +
+      '<a class="action-btn" href="' + App.esc(item.site_url) + '" target="_blank" rel="noopener">打开</a> <button class="action-btn" data-site-edit="' + App.esc(item.hostname) + '">编辑</button> <button class="action-btn del" data-site-delete="' + App.esc(item.hostname) + '">删除</button></td></tr>'; }).join('') : '<tr><td colspan="5" class="empty">尚未添加域名</td></tr>';
+    target.querySelectorAll('[data-site-edit]').forEach(function (button) { button.onclick = function () { openHostConfig(rows.find(function (row) { return row.hostname === button.dataset.siteEdit; }), host); }; });
+    target.querySelectorAll('[data-site-delete]').forEach(function (button) { button.onclick = async function () { if (!confirm('移除此域名的独立站点设置？域名本身不会从 Cloudflare 解绑。')) return; var deleted = await App.req('/sites/' + encodeURIComponent(button.dataset.siteDelete), { method: 'DELETE' }); App.toast(deleted.msg || '完成', deleted.code !== 0); loadHostConfigs(host); }; });
+  }
+
+  function openHostConfig(item, host) {
+    item = item || {};
+    var body = '<div class="row2">' + App.field('域名（不含协议和端口）', App.input('hostName', item.hostname || '')) + App.field('站点名称', App.input('hostSiteName', item.site_name || '')) + '</div>' +
+      App.field('站点 HTTPS 根地址', App.input('hostSiteUrl', item.site_url || '')) + App.field('SEO 关键词', App.input('hostKeywords', item.site_keywords || '')) +
+      App.field('SEO 描述', App.textarea('hostDescription', item.site_description || '', 3)) +
+      '<div class="row2">' + App.field('桌面主题覆盖 JSON', App.textarea('hostTheme', item.theme_json || '{}', 7)) + App.field('移动主题覆盖 JSON', App.textarea('hostMobileTheme', item.mobile_theme_json || '{}', 7)) + '</div>' +
+      App.field('状态', App.select('hostStatus', [{ value: 1, label: '启用' }, { value: 0, label: '停用' }], item.status == null ? 1 : item.status)) +
+      '<p class="sub">主题 JSON 示例：{"theme.color.site":"#22c55e","theme.style.color":"1"}。参数名称可在“主题模板”查看；不允许注入自定义脚本。</p>';
+    App.modal(item.hostname ? '编辑域名站点配置' : '新增域名站点配置', body, async function () {
+      var result = await App.req('/sites', { method: 'POST', body: { hostname: App.val('hostName'), site_name: App.val('hostSiteName'), site_url: App.val('hostSiteUrl'),
+        site_keywords: App.val('hostKeywords'), site_description: App.val('hostDescription'), theme_json: App.val('hostTheme'), mobile_theme_json: App.val('hostMobileTheme'), status: App.intVal('hostStatus') } });
+      if (result.code === 0) { App.closeModal(); App.toast(result.msg); loadHostConfigs(host); } else App.toast(result.msg || '保存失败', true);
+    });
+  }
 
   async function loadDatabaseTables() {
     var result = await App.req('/database/tables');

@@ -8,7 +8,7 @@ import type { Bindings, CollectNodeItem, TypeBindItem, TypeItem, VodItem } from 
 import { AuthUtils } from '../utils/auth.ts';
 import { VodService } from '../services/vod.ts';
 import { CollectorService } from '../services/collector.ts';
-import { ThemeService } from '../services/theme.ts';
+import { DEFAULT_THEME, ThemeService } from '../services/theme.ts';
 import { UserService } from '../services/user.ts';
 import { CardService } from '../services/card.ts';
 import { ActorService } from '../services/actor.ts';
@@ -30,14 +30,15 @@ const BACKUP_TABLES = [
   'type', 'vod', 'art', 'topic', 'manga', 'actor', 'role', 'website', 'user',
   'user_group', 'card', 'order', 'ulog', 'gbook', 'comment', 'link', 'ads',
   'collect_node', 'type_bind', 'player', 'downer', 'server', 'config',
-  'theme_config', 'cj_history', 'live_category', 'live_channel', 'collect_run_log', 'user_login_log',
+  'theme_config', 'site_host_config', 'site_page', 'cj_history', 'live_category', 'live_channel', 'collect_run_log', 'user_login_log',
   'admin_role', 'admin_account', 'user_follow', 'danmaku', 'chatroom_message', 'user_pm', 'share_log',
   'cash_log', 'coupon', 'user_coupon', 'mall_goods', 'mall_order', 'site_notice', 'sign_log', 'vod_play_fail',
   'content_check_rule', 'content_check_issue', 'scheduled_task', 'scheduled_task_log', 'media_asset', 'media_sync_scan', 'media_sync_item', 'telegram_storage_account', 'telegram_storage_state', 'user_invite_code', 'user_invite_reward', 'user_access_rule', 'recycle_bin',
   'sign_milestone', 'user_sign_milestone',
   'seckill_campaign',
   'user_notification', 'web_push_subscription', 'payment_intent', 'payment_event', 'user_post', 'user_post_like', 'cash_withdrawal', 'user_wallet',
-  'search_query_log', 'resource_check_item', 'content_translation',
+  'search_query_log', 'resource_check_item', 'content_translation', 'role_vote', 'role_score_vote',
+  'user_post_comment', 'user_post_report', 'user_post_attachment', 'playback_trial_session',
 ] as const;
 type BackupTable = typeof BACKUP_TABLES[number];
 const isBackupTable = (value: string): value is BackupTable =>
@@ -210,6 +211,15 @@ adminRouter.post('/payment/reconcile/:orderCode', async (c) => {
   }
 });
 
+adminRouter.post('/payment/refund/:orderCode', async (c) => {
+  try {
+    const result = await PaymentService.refundMallOrder(c.env, c.req.param('orderCode'));
+    return c.json({ code: 0, msg: '易支付退款已受理，商城库存、积分和优惠券已按退款流程返还', data: result });
+  } catch (error) {
+    return c.json({ code: 400, msg: error instanceof Error ? error.message : '支付退款失败' }, 400);
+  }
+});
+
 // 3. 控制台概览统计数据
 adminRouter.get('/overview', async (c) => {
   const db = c.env.DB;
@@ -352,6 +362,59 @@ adminRouter.post('/database/import/:table', async (c) => {
     restored += Math.min(50, statements.length - i);
   }
   return c.json({ code: 0, msg: `已还原 ${restored} 行`, data: { restored } });
+});
+
+adminRouter.get('/database/r2/backups', async (c) => {
+  if (!c.env.MEDIA_BUCKET) return c.json({ code: 503, msg: '未绑定 R2 媒体存储桶' }, 503);
+  const listed = await c.env.MEDIA_BUCKET.list({ prefix: 'maccms-db-backups/', limit: 100 });
+  return c.json({ code: 0, data: (listed.objects || []).map((item) => ({ key: item.key, size: item.size, uploaded: item.uploaded?.toISOString?.() || '' })) });
+});
+
+adminRouter.post('/database/r2/backups/:table', async (c) => {
+  const table = c.req.param('table');
+  if (!isBackupTable(table)) return c.json({ code: 400, msg: '不支持备份该数据表' }, 400);
+  if (!c.env.MEDIA_BUCKET) return c.json({ code: 503, msg: '未绑定 R2 媒体存储桶' }, 503);
+  const rows = await c.env.DB.prepare(`SELECT * FROM "${table}" LIMIT 10001`).all<Record<string, unknown>>();
+  if ((rows.results || []).length > 10000) return c.json({ code: 413, msg: '该表超过单个 R2 快照 10,000 行上限，请使用分页 JSON 备份' }, 413);
+  const exportedAt = new Date().toISOString();
+  const payload = JSON.stringify({ table, exported_at: exportedAt, rows: rows.results || [] });
+  const compressed = await new Response(new Blob([payload]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+  const stamp = exportedAt.replace(/[-:.TZ]/g, '').slice(0, 14);
+  const key = `maccms-db-backups/${table}/${stamp}-${crypto.randomUUID().slice(0, 8)}.json.gz`;
+  await c.env.MEDIA_BUCKET.put(key, compressed, { httpMetadata: { contentType: 'application/json', contentEncoding: 'gzip' }, customMetadata: { table, rowCount: String((rows.results || []).length) } });
+  return c.json({ code: 0, msg: `已将 ${(rows.results || []).length} 行压缩备份到 R2`, data: { key, rows: (rows.results || []).length, bytes: compressed.byteLength } });
+});
+
+adminRouter.post('/database/r2/restore', async (c) => {
+  if (!c.env.MEDIA_BUCKET) return c.json({ code: 503, msg: '未绑定 R2 媒体存储桶' }, 503);
+  const body = await c.req.json().catch(() => ({}));
+  const table = String(body.table || ''), key = String(body.key || '');
+  if (!isBackupTable(table) || !key.startsWith(`maccms-db-backups/${table}/`) || !key.endsWith('.json.gz') || key.includes('..')) {
+    return c.json({ code: 400, msg: '备份键或数据表不匹配' }, 400);
+  }
+  const object = await c.env.MEDIA_BUCKET.get(key);
+  if (!object) return c.json({ code: 404, msg: 'R2 快照不存在' }, 404);
+  let payload: { table?: string; rows?: unknown[] };
+  try { payload = JSON.parse(await new Response(object.body.pipeThrough(new DecompressionStream('gzip'))).text()); }
+  catch { return c.json({ code: 400, msg: 'R2 快照解压或 JSON 解析失败' }, 400); }
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  if (payload.table !== table || rows.length > 10000) return c.json({ code: 400, msg: '快照内容与所选数据表不匹配或超过行数上限' }, 400);
+  const info = await c.env.DB.prepare(`PRAGMA table_info("${table}")`).all<{ name: string }>();
+  const columns = new Set((info.results || []).map((col) => col.name));
+  let restored = 0;
+  for (let offset = 0; offset < rows.length; offset += 50) {
+    const statements = [];
+    for (const row of rows.slice(offset, offset + 50)) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return c.json({ code: 400, msg: '快照行格式无效' }, 400);
+      const keys = Object.keys(row as Record<string, unknown>);
+      if (!keys.length || keys.some((column) => !columns.has(column))) return c.json({ code: 400, msg: '快照包含当前表不存在的字段' }, 400);
+      statements.push(c.env.DB.prepare(`INSERT OR REPLACE INTO "${table}" (${keys.map((column) => `"${column}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`)
+        .bind(...keys.map((column) => { const value = (row as Record<string, unknown>)[column]; return value !== null && typeof value === 'object' ? JSON.stringify(value) : value; })));
+    }
+    await c.env.DB.batch(statements);
+    restored += statements.length;
+  }
+  return c.json({ code: 0, msg: `已从 R2 还原 ${restored} 行`, data: { restored } });
 });
 
 // 4. 视频管理 API
@@ -1356,6 +1419,90 @@ adminRouter.post('/theme/reset', async (c) => {
   return c.json({ code: 0, msg: '主题配置已重置' });
 });
 
+// D1-backed static pages are rendered as escaped HTML by the Worker edge route.
+adminRouter.get('/pages', async (c) => {
+  const rows = await c.env.DB.prepare(`SELECT page_id,slug,title,description,keywords,body,status,created_at,updated_at
+    FROM site_page ORDER BY updated_at DESC,page_id DESC LIMIT 500`).all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+adminRouter.post('/pages', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const id = Math.max(0, Number(body.page_id) || 0);
+  const slug = String(body.slug || '').trim().toLowerCase();
+  const title = String(body.title || '').trim();
+  const description = String(body.description || '').trim().slice(0, 320);
+  const keywords = String(body.keywords || '').trim().slice(0, 300);
+  const content = String(body.body || '').trim();
+  const status = Number(body.status) === 1 ? 1 : 0;
+  if (!/^[a-z0-9][a-z0-9_-]{1,62}$/.test(slug)) return c.json({ code: 400, msg: '页面路径须为 2–63 位小写字母、数字、短横线或下划线' }, 400);
+  if (!title || title.length > 120 || content.length > 50000) return c.json({ code: 400, msg: '标题必填且不超过 120 字，页面正文不能超过 50,000 字' }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    if (id) {
+      const saved = await c.env.DB.prepare(`UPDATE site_page SET slug=?,title=?,description=?,keywords=?,body=?,status=?,updated_at=? WHERE page_id=?`)
+        .bind(slug, title, description, keywords, content, status, now, id).run();
+      if (!saved.meta.changes) return c.json({ code: 404, msg: '页面不存在' }, 404);
+    } else {
+      await c.env.DB.prepare(`INSERT INTO site_page(slug,title,description,keywords,body,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`)
+        .bind(slug, title, description, keywords, content, status, now, now).run();
+    }
+  } catch (error) {
+    if ((error as Error).message.includes('UNIQUE')) return c.json({ code: 409, msg: '页面路径已被使用' }, 409);
+    throw error;
+  }
+  return c.json({ code: 0, msg: status ? '页面已发布' : '页面草稿已保存' });
+});
+
+adminRouter.delete('/pages/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '页面编号无效' }, 400);
+  const result = await c.env.DB.prepare('DELETE FROM site_page WHERE page_id=?').bind(id).run();
+  return c.json({ code: result.meta.changes ? 0 : 404, msg: result.meta.changes ? '页面已删除' : '页面不存在' }, result.meta.changes ? 200 : 404);
+});
+
+adminRouter.get('/sites', async (c) => {
+  const rows = await c.env.DB.prepare('SELECT * FROM site_host_config ORDER BY hostname LIMIT 300').all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+adminRouter.post('/sites', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const hostname = String(body.hostname || '').trim().toLowerCase();
+  let hostUrl: URL;
+  try { hostUrl = new URL(`https://${hostname}`); } catch { return c.json({ code: 400, msg: '域名格式无效' }, 400); }
+  if (!hostname || hostUrl.hostname !== hostname || hostUrl.pathname !== '/' || hostname.length > 253 || hostname.includes(':')) return c.json({ code: 400, msg: '请填写不带端口、路径和协议的域名' }, 400);
+  let siteUrl: URL;
+  try { siteUrl = new URL(String(body.site_url || `https://${hostname}`).trim()); } catch { return c.json({ code: 400, msg: '站点 URL 格式无效' }, 400); }
+  if (siteUrl.protocol !== 'https:' || siteUrl.hostname.toLowerCase() !== hostname || siteUrl.username || siteUrl.password || siteUrl.search || siteUrl.hash || !['', '/'].includes(siteUrl.pathname)) {
+    return c.json({ code: 400, msg: '站点 URL 必须是此域名的 HTTPS 根地址' }, 400);
+  }
+  const parseTheme = (value: unknown): string | null => {
+    let parsed: unknown;
+    try { parsed = typeof value === 'string' ? JSON.parse(value || '{}') : (value || {}); } catch { return null; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length > 180) return null;
+    const entries = Object.entries(parsed as Record<string, unknown>);
+    if (entries.some(([key, item]) => !DEFAULT_THEME[key] || key === 'theme.script.custom' || !['string','number','boolean'].includes(typeof item) || String(item).length > 2000)) return null;
+    return JSON.stringify(parsed);
+  };
+  const theme = parseTheme(body.theme_json), mobileTheme = parseTheme(body.mobile_theme_json);
+  if (theme === null || mobileTheme === null) return c.json({ code: 400, msg: '桌面/移动主题 JSON 无效；仅支持后台现有主题参数，不能包含自定义脚本' }, 400);
+  const siteName = String(body.site_name || '').trim().slice(0, 120);
+  if (!siteName) return c.json({ code: 400, msg: '请填写站点名称' }, 400);
+  await c.env.DB.prepare(`INSERT INTO site_host_config(hostname,site_name,site_url,site_keywords,site_description,theme_json,mobile_theme_json,status,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(hostname) DO UPDATE SET site_name=excluded.site_name,site_url=excluded.site_url,
+      site_keywords=excluded.site_keywords,site_description=excluded.site_description,theme_json=excluded.theme_json,
+      mobile_theme_json=excluded.mobile_theme_json,status=excluded.status,updated_at=excluded.updated_at`)
+    .bind(hostname, siteName, siteUrl.origin, String(body.site_keywords || '').slice(0, 300), String(body.site_description || '').slice(0, 500), theme, mobileTheme, Number(body.status) === 0 ? 0 : 1, Math.floor(Date.now() / 1000)).run();
+  return c.json({ code: 0, msg: '站点域名配置已保存' });
+});
+
+adminRouter.delete('/sites/:hostname', async (c) => {
+  const hostname = String(c.req.param('hostname') || '').trim().toLowerCase();
+  const result = await c.env.DB.prepare('DELETE FROM site_host_config WHERE hostname=?').bind(hostname).run();
+  return c.json({ code: result.meta.changes ? 0 : 404, msg: result.meta.changes ? '站点域名配置已删除' : '域名配置不存在' }, result.meta.changes ? 200 : 404);
+});
+
 // 18. 系统全局配置 API (密码安全落库)
 adminRouter.get('/config', async (c) => {
   const configs = await VodService.getConfigs(c.env.DB);
@@ -1366,11 +1513,13 @@ adminRouter.get('/config', async (c) => {
   configs.meilisearch_api_key_set = configs.meilisearch_api_key ? '1' : '0';
   configs.push_vapid_private_key_set = configs.push_vapid_private_key ? '1' : '0';
   configs.ai_api_key_set = configs.ai_api_key ? '1' : '0';
+  configs.turnstile_secret_key_set = configs.turnstile_secret_key ? '1' : '0';
   delete configs.mail_smtp_password;
   delete configs.payment_secret;
   delete configs.meilisearch_api_key;
   delete configs.push_vapid_private_key;
   delete configs.ai_api_key;
+  delete configs.turnstile_secret_key;
   configs.telegraph_password_set = configs.telegraph_password ? '1' : '0';
   configs.telegram_bot_token_set = configs.telegram_bot_token ? '1' : '0';
   delete configs.telegraph_password;
@@ -1398,6 +1547,14 @@ adminRouter.post('/config', async (c) => {
   for (const key of ['user_email_required', 'user_email_verification', 'user_post_audit']) {
     if (body[key] !== undefined && !['0', '1'].includes(String(body[key]))) return c.json({ code: 400, msg: `${key} 必须为 0 或 1` }, 400);
   }
+  if (body.search_terms_logging !== undefined && !['0', '1'].includes(String(body.search_terms_logging))) return c.json({ code: 400, msg: '搜索词统计开关值无效' }, 400);
+  if (body.ai_semantic_search !== undefined && !['0', '1'].includes(String(body.ai_semantic_search))) return c.json({ code: 400, msg: 'AI 智能搜索开关值无效' }, 400);
+  if (body.security_turnstile_enabled !== undefined && !['0', '1'].includes(String(body.security_turnstile_enabled))) return c.json({ code: 400, msg: 'Turnstile 开关值无效' }, 400);
+  if (body.payment_provider !== undefined && !['epay', 'generic'].includes(String(body.payment_provider))) return c.json({ code: 400, msg: '支付服务商只能选择易支付或兼容收银台' }, 400);
+  if (body.payment_epay_type !== undefined && !['', 'alipay', 'wxpay', 'qqpay', 'bank', 'jdpay', 'paypal', 'usdt', 'stripepay', 'stripealipay', 'stripewxpay'].includes(String(body.payment_epay_type))) {
+    return c.json({ code: 400, msg: '易支付收款方式无效' }, 400);
+  }
+  if (body.turnstile_site_key !== undefined && String(body.turnstile_site_key).trim().length > 200) return c.json({ code: 400, msg: 'Turnstile Site Key 长度无效' }, 400);
   for (const [key, label] of Object.entries({ payment_checkout_url: '支付收银台地址', payment_query_url: '支付查询接口地址', meilisearch_url: 'Meilisearch 地址' })) {
     if (body[key] === undefined || !String(body[key]).trim()) continue;
     let endpoint: URL;
@@ -1449,6 +1606,10 @@ adminRouter.post('/config', async (c) => {
   const smtpHost = String(body.mail_smtp_host ?? saved.mail_smtp_host ?? '').trim();
   const smtpFrom = String(body.mail_from ?? saved.mail_from ?? '').trim();
   if (emailRequired && (!smtpHost || !smtpFrom)) return c.json({ code: 400, msg: '强制邮箱验证前，请先配置 SMTP 主机和发件人地址' }, 400);
+  const turnstileEnabled = String(body.security_turnstile_enabled ?? saved.security_turnstile_enabled ?? '0') === '1';
+  const turnstileSiteKey = String(body.turnstile_site_key ?? saved.turnstile_site_key ?? '').trim();
+  const turnstileSecret = String(body.turnstile_secret_key ?? saved.turnstile_secret_key ?? '').trim();
+  if (turnstileEnabled && (!turnstileSiteKey || !turnstileSecret)) return c.json({ code: 400, msg: '启用 Turnstile 前请填写 Site Key 和 Secret Key' }, 400);
   if (body.mail_smtp_host !== undefined && (smtpHost.length > 253 || /[\s/\\@]/.test(smtpHost))) {
     return c.json({ code: 400, msg: 'SMTP 主机格式无效' }, 400);
   }
@@ -1500,9 +1661,9 @@ adminRouter.post('/config', async (c) => {
       await VodService.setConfig(db, key, val);
     } else if (key === 'telegram_bot_token' && typeof val === 'string' && val.trim()) {
       await VodService.setConfig(db, key, val);
-    } else if (['mail_smtp_password', 'payment_secret', 'meilisearch_api_key', 'push_vapid_private_key', 'ai_api_key'].includes(key) && typeof val === 'string' && val.trim()) {
+    } else if (['mail_smtp_password', 'payment_secret', 'meilisearch_api_key', 'push_vapid_private_key', 'ai_api_key', 'turnstile_secret_key'].includes(key) && typeof val === 'string' && val.trim()) {
       await VodService.setConfig(db, key, val.trim());
-    } else if (key !== 'new_password' && key !== 'admin_pwd' && key !== 'user_token_secret' && key !== 'telegraph_password' && key !== 'telegram_bot_token') {
+    } else if (key !== 'new_password' && key !== 'admin_pwd' && key !== 'user_token_secret' && key !== 'telegraph_password' && key !== 'telegram_bot_token' && key !== 'turnstile_secret_key') {
       await VodService.setConfig(db, key, String(val));
     }
   }

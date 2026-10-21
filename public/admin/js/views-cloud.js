@@ -12,7 +12,7 @@
     cash: ['cash_id','user_id','cash_type','amount','points','note','operator','created_at'],
     coupons: ['coupon_id','coupon_code','coupon_name','discount_type','discount_value','used_count','max_uses','status'],
     goods: ['goods_id','goods_name','price','points','inventory','status','sort'],
-    'mall-orders': ['mall_order_id','order_code','user_id','goods_id','quantity','total_price','discount_amount','total_points','status','created_at'],
+    'mall-orders': ['mall_order_id','order_code','user_id','goods_id','quantity','total_price','discount_amount','total_points','status','payment_status','created_at'],
     notices: ['notice_id','title','notice_type','status','starts_at','ends_at','created_at'],
     signs: ['sign_id','user_id','sign_day','points','created_at'],
     'play-fails': ['fail_id','vod_id','vod_name','play_from','play_part','message','status','created_at']
@@ -36,12 +36,14 @@
   };
 
   Views.posts = async function(host){
-    host.innerHTML='<div class="toolbar"><select class="admin-select" id="postStatusFilter"><option value="">全部状态</option><option value="0">待审核</option><option value="1">已发布</option><option value="2">已驳回</option></select><button class="action-btn" id="postFilterApply">筛选</button></div><div class="admin-card"><div id="postRows"></div></div>';
-    var result=await App.req('/cloud/posts'+(App.val('postStatusFilter')!==''?'?status='+App.val('postStatusFilter'):'')),rows=result.data||[],states={0:'待审核',1:'已发布',2:'已驳回'},visibility={public:'公开',followers:'关注者',private:'仅自己'};
+    host.innerHTML='<div class="toolbar"><select class="admin-select" id="postStatusFilter"><option value="">全部状态</option><option value="0">待审核</option><option value="1">已发布</option><option value="2">已驳回</option></select><button class="action-btn" id="postFilterApply">筛选</button></div><div class="admin-card"><div id="postRows"></div></div><div class="admin-card"><div class="card-head"><h3>会员动态举报</h3><span class="sub">举报人可见，处理后记录保留。</span></div><div id="postReportRows"></div></div>';
+    var results=await Promise.all([App.req('/cloud/posts'+(App.val('postStatusFilter')!==''?'?status='+App.val('postStatusFilter'):'')),App.req('/cloud/posts/reports?status=open')]),result=results[0],rows=result.data||[],reports=results[1].data||[],states={0:'待审核',1:'已发布',2:'已驳回'},visibility={public:'公开',followers:'关注者',private:'仅自己'};
     rows=rows.map(function(item){return Object.assign({},item,{user_name:item.user_nick||item.user_name,status_label:states[Number(item.status)]||item.status,visibility_label:visibility[item.visibility]||item.visibility});});
     document.getElementById('postRows').innerHTML=tableHtml(rows,['post_id','user_name','content','visibility_label','status_label','created_at'],function(item){return '<button class="action-btn" data-post-status="1" data-post-id="'+item.post_id+'">发布</button> <button class="action-btn del" data-post-status="2" data-post-id="'+item.post_id+'">驳回</button> <button class="action-btn" data-post-status="0" data-post-id="'+item.post_id+'">待审核</button>';});
+    document.getElementById('postReportRows').innerHTML=tableHtml(reports.map(function(item){return Object.assign({},item,{author:item.user_nick||item.user_name,reporter:item.reporter_nick||item.reporter_name,reported_content:String(item.content||'').slice(0,180)});}),['report_id','post_id','author','reporter','reason','reported_content','created_at'],function(item){return '<button class="action-btn" data-report-action="reviewed" data-report-id="'+item.report_id+'">核查完成</button> <button class="action-btn del" data-report-action="dismissed" data-report-id="'+item.report_id+'">不成立</button> <button class="action-btn del" data-report-action="hide" data-report-id="'+item.report_id+'">下架动态</button>';});
     App.on('postFilterApply','click',function(){Views.posts(host);});
     host.querySelectorAll('[data-post-status]').forEach(function(button){button.onclick=async function(){var result=await App.req('/cloud/posts/'+button.dataset.postId+'/status',{method:'POST',body:{status:Number(button.dataset.postStatus)}});App.toast(result.msg||'审核完成',result.code!==0);Views.posts(host);};});
+    host.querySelectorAll('[data-report-action]').forEach(function(button){button.onclick=async function(){var result=await App.req('/cloud/posts/reports/'+button.dataset.reportId+'/status',{method:'POST',body:{action:button.dataset.reportAction}});App.toast(result.msg||'举报处理完成',result.code!==0);Views.posts(host);};});
   };
 
   Views.resources = async function(host){
@@ -138,11 +140,12 @@
         if (key === 'status' && value !== undefined) value = resource === 'mall-orders'
           ? ({0:'待核款',1:'已确认',2:'已完成',3:'已取消'}[Number(value)] || '未知')
           : Number(value) === 1 ? '已通过 / 启用' : '待审核 / 停用';
+        if (key === 'payment_status' && value !== undefined) value = ({pending:'待支付',paid:'已支付',refunded:'已退款',cancelled:'已取消',expired:'已过期'}[String(value)] || '线下 / 未生成');
         return '<td>' + App.esc(value == null ? '' : value) + '</td>';
       }).join('') + '<td>' + (canEdit ? '<button class="action-btn" data-edit="' + item[keyId] + '">编辑</button> ' : '') +
         (resource === 'mall-orders'
           ? (Number(item.status) === 0 ? '<button class="action-btn" data-order-status="1" data-order-id="' + item[keyId] + '">确认收款</button> <button class="action-btn del" data-order-status="3" data-order-id="' + item[keyId] + '">取消订单</button>'
-            : Number(item.status) === 1 ? '<button class="action-btn" data-order-status="2" data-order-id="' + item[keyId] + '">标记完成</button>' : '')
+          : Number(item.status) === 1 ? '<button class="action-btn" data-order-status="2" data-order-id="' + item[keyId] + '">标记完成</button>' + (item.payment_status === 'paid' ? ' <button class="action-btn del" data-order-refund="' + App.esc(item.order_code) + '">易支付退款</button>' : '') : '')
           : (Object.prototype.hasOwnProperty.call(item,'status') ? '<button class="action-btn" data-status="' + item[keyId] + '" data-current="' + Number(item.status) + '">' + (Number(item.status) === 1 ? '隐藏' : '通过') + '</button> ' : '') +
             '<button class="action-btn del" data-delete="' + item[keyId] + '">删除</button>') + '</td></tr>';
     }).join('') : '<tr><td class="empty" colspan="' + (columns[resource].length + 2) + '">暂无记录</td></tr>';
@@ -157,6 +160,7 @@
       if(changed.code!==0)App.toast(changed.msg||'状态更新失败',true);else App.toast(changed.msg);
       renderDataset(host,resource,page);
     };});
+    rowsHost.querySelectorAll('[data-order-refund]').forEach(function(button){button.onclick=async function(){if(!confirm('向易支付申请原路全额退款？仅支持尚未履约的商城订单。'))return;var result=await App.req('/payment/refund/'+encodeURIComponent(button.dataset.orderRefund),{method:'POST',body:{}});if(result.code!==0)App.toast(result.msg||'退款失败',true);else App.toast(result.msg||'退款已受理');renderDataset(host,resource,page);};});
     rowsHost.querySelectorAll('[data-delete]').forEach(function(button){button.onclick=async function(){if(!confirm('确定删除这条记录？'))return;await App.req('/cloud/data/'+resource+'/'+button.dataset.delete,{method:'DELETE'});renderDataset(host,resource,page);};});
     var pager = document.getElementById('cloudDataPager');
     if (pager) pager.innerHTML = App.pager(data,function(next){renderDataset(host,resource,next);});
@@ -171,7 +175,7 @@
     item=item||{};
     var fields={
       coupons:[['coupon_name','优惠券名称','text'],['coupon_code','兑换码（留空自动生成）','text'],['discount_type','折扣类型','select'],['discount_value','折扣额度','number'],['min_spend','最低消费','number'],['max_uses','可领取数量','number'],['starts_at','开始时间戳（0 不限）','number'],['ends_at','结束时间戳（0 不限）','number'],['status','状态','select']],
-      goods:[['goods_name','商品名称','text'],['goods_pic','图片地址','text'],['price','现金价格（线下核验）','number'],['points','积分价格（0 表示现金）','number'],['inventory','库存','number'],['sort','排序','number'],['goods_desc','商品说明','textarea'],['status','状态','select']],
+      goods:[['goods_name','商品名称','text'],['goods_pic','图片地址','image'],['price','现金价格（线下核验）','number'],['points','积分价格（0 表示现金）','number'],['inventory','库存','number'],['sort','排序','number'],['goods_desc','商品说明','textarea'],['status','状态','select']],
       notices:[['title','公告标题','text'],['notice_type','公告类型','text'],['starts_at','开始时间戳（0 立即）','number'],['ends_at','结束时间戳（0 不限）','number'],['content','公告内容','textarea'],['status','状态','select']]
     }[resource]||[];
     var body=fields.map(function(field){
@@ -181,6 +185,7 @@
         return App.field(title,App.select('cloudEdit_'+key,choices,value==null?(key==='status'?1:'fixed'):value));
       }
       if(kind==='textarea') return App.field(title,App.textarea('cloudEdit_'+key,value,4));
+      if(kind==='image') return App.field(title,'<div style="display:flex;gap:6px"><input class="admin-input" id="cloudEdit_'+key+'" value="'+App.esc(value||'')+'" placeholder="图片 URL" style="flex:1;min-width:0"><button type="button" class="action-btn" id="cloudPick_'+key+'">从媒体库选择</button></div>');
       return App.field(title,App.input('cloudEdit_'+key,value==null?'':value,'',kind==='number'?'number':'text'));
     }).join('');
     App.modal((item[columns[resource][0]]?'编辑':'新增')+labels[resource],body,async function(){
@@ -189,6 +194,7 @@
       var result=await App.req('/cloud/data/'+resource+'/save',{method:'POST',body:payload});
       if(result.code===0){App.closeModal();App.toast(result.msg);renderDataset(host,resource,1);}else App.toast(result.msg||'保存失败',true);
     });
+    fields.filter(function(field){return field[2]==='image';}).forEach(function(field){var button=document.getElementById('cloudPick_'+field[0]);if(button)button.onclick=function(){App.pickMedia('cloudEdit_'+field[0]);};});
   }
 
   async function openCashAdjustment(){

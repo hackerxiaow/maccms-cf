@@ -231,12 +231,15 @@
   Views.theme = async function (host) {
     host.innerHTML = '<div class="admin-card"><div class="card-head"><h3>海螺 Conch_M003 主题全量配置</h3>' +
       '<div class="toolbar" style="margin:0">' +
+      '<select class="admin-select" id="themePreset"><option value="classic">经典蓝</option><option value="mint">薄荷绿</option><option value="violet">柔和紫</option><option value="night">夜间蓝</option></select>' +
+      '<button class="action-btn" id="themePresetApply">应用配色预设</button>' +
       '<button class="action-btn" onclick="window.open(\'/\',\'_blank\')">预览前台</button>' +
       '<button class="action-btn" id="themeResetBtn">重置本组</button>' +
       '<button class="btn-create" id="themeSaveBtn">保存配置</button></div></div>' +
       '<div id="themeTabs"></div><div id="themeForm"><div class="empty">加载中…</div></div></div>';
     App.on('themeSaveBtn', 'click', saveTheme);
     App.on('themeResetBtn', 'click', resetThemeGroup);
+    App.on('themePresetApply', 'click', applyThemePreset);
     var j = await App.req('/theme');
     if (j.code !== 0) { document.getElementById('themeForm').innerHTML = '<div class="empty">加载失败</div>'; return; }
     themeData = j.data;
@@ -303,6 +306,22 @@
     App.toast(r.msg || (r.code === 0 ? '主题配置已保存' : '保存失败'), r.code !== 0);
   }
 
+  function applyThemePreset() {
+    var presets = {
+      classic: { site: '#0099ff', subs: '#00bbff', dark: '0', radius: '10' },
+      mint: { site: '#19b985', subs: '#71d9ae', dark: '0', radius: '12' },
+      violet: { site: '#8064df', subs: '#b49bf4', dark: '0', radius: '12' },
+      night: { site: '#60a5fa', subs: '#2563eb', dark: '1', radius: '8' }
+    };
+    var preset = presets[App.val('themePreset')] || presets.classic;
+    themeDraft['theme.color.site'] = preset.site;
+    themeDraft['theme.color.subs'] = preset.subs;
+    themeDraft['theme.style.color'] = preset.dark;
+    themeDraft['theme.img.radius'] = preset.radius;
+    themeGroup = 'color'; renderThemeTabs(); renderThemeForm();
+    App.toast('预设已填入草稿；保存配置后会应用到前台');
+  }
+
   async function resetThemeGroup() {
     if (!confirm('确定将当前分组重置为官方默认值？')) return;
     var r = await App.req('/theme/reset', { method: 'POST', body: { group: themeGroup } });
@@ -361,27 +380,36 @@
       '</div>' +
       '<p class="sub">邮件由 worker-mailer 通过 Cloudflare Workers TCP Sockets 发送。验证码 10 分钟有效，并按 IP 与邮箱限频。开启强制验证前，请先配置 SMTP。</p>' +
       '<div class="toolbar"><input class="admin-input" id="cfMailTestTo" type="email" placeholder="测试收件邮箱" style="max-width:320px"><button class="action-btn" id="cfgMailTest">发送测试邮件</button><span class="sub">请先保存 SMTP 设置，再发送测试邮件。</span></div>' +
+      '<div class="admin-divider"></div><div class="card-head"><h3>登录与注册防护</h3></div>' +
+      App.field('启用 Cloudflare Turnstile', App.select('cfTurnstileEnabled', [{ value: '0', label: '关闭' }, { value: '1', label: '保护登录和注册' }], c.security_turnstile_enabled || '0')) +
+      '<div class="row2">' + App.field('Turnstile Site Key', App.input('cfTurnstileSite', c.turnstile_site_key || '')) +
+      App.field('Turnstile Secret Key', App.input('cfTurnstileSecret', '', c.turnstile_secret_key_set === '1' ? '已设置，留空保持不变' : '请输入 Secret Key', 'password')) + '</div>' +
+      '<p class="sub">启用后登录与注册服务端都会调用 Cloudflare Siteverify 校验；注册和登录仍保留 IP / 账号限流及访问规则。</p>' +
       '<div class="admin-divider"></div><div class="card-head"><h3>在线支付与搜索服务</h3></div>' +
       '<div class="row2">' +
-      App.field('兼容支付收银台 URL', App.input('cfPayUrl', c.payment_checkout_url || '')) +
-      App.field('支付查询接口 URL（可选）', App.input('cfPayQueryUrl', c.payment_query_url || '')) +
+      App.field('支付服务商', App.select('cfPayProvider', [{ value: 'epay', label: '易支付（Epay V1）' }, { value: 'generic', label: '旧版 HMAC 兼容收银台' }], c.payment_provider || 'epay')) +
+      App.field('支付网关 URL', App.input('cfPayUrl', c.payment_checkout_url || '', '易支付示例：https://pay.example.com/submit.php')) +
       '</div>' +
       '<div class="row3">' +
-      App.field('商户 ID', App.input('cfPayMerchant', c.payment_merchant_id || '')) +
-      App.field('币种', App.input('cfPayCurrency', c.payment_currency || 'CNY')) +
-      App.field('支付回调签名密钥', App.input('cfPaySecret', '', c.payment_secret_set === '1' ? '已设置，留空保持不变' : '请输入共享密钥', 'password')) +
+      App.field('商户 PID', App.input('cfPayMerchant', c.payment_merchant_id || '')) +
+      App.field('易支付收款方式', App.select('cfPayType', [{ value: '', label: '收银台选择' }, { value: 'alipay', label: '支付宝' }, { value: 'wxpay', label: '微信支付' }, { value: 'qqpay', label: 'QQ 钱包' }, { value: 'bank', label: '网银' }], c.payment_epay_type || '')) +
+      App.field('商户密钥 / 回调密钥', App.input('cfPaySecret', '', c.payment_secret_set === '1' ? '已设置，留空保持不变' : '请输入易支付 KEY', 'password')) +
       '</div>' +
+      App.field('旧版查询接口 URL（兼容收银台可选）', App.input('cfPayQueryUrl', c.payment_query_url || '')) +
       App.field('在线支付套餐 JSON', App.textarea('cfPayProducts', c.payment_products || '[]', 7)) +
       '<div class="row2">' +
       App.field('Meilisearch URL', App.input('cfMeiliUrl', c.meilisearch_url || '')) +
       App.field('Meilisearch API Key', App.input('cfMeiliKey', '', c.meilisearch_api_key_set === '1' ? '已设置，留空保持不变' : '请输入 Search API Key', 'password')) +
-      '</div><div class="toolbar"><button class="action-btn" id="cfgSearchSync">同步 Meilisearch 索引</button><span class="sub" id="cfgSearchStatus">正在读取搜索统计…</span></div>' +
-      '<div id="cfgSearchStats" class="sub"></div><p class="sub">支付需配置支持本项目签名参数的托管收银台；Meilisearch 未配置时仍使用 D1 搜索。</p>' +
+      '</div>' +
+      App.field('搜索词统计（仅保存词条，不记录用户身份/IP）', App.select('cfSearchTerms', [{ value: '0', label: '关闭（默认）' }, { value: '1', label: '开启热词统计' }], c.search_terms_logging || '0')) +
+      '<div class="toolbar"><button class="action-btn" id="cfgSearchSync">同步 Meilisearch 索引</button><span class="sub" id="cfgSearchStatus">正在读取搜索统计…</span></div>' +
+      '<div id="cfgSearchStats" class="sub"></div><p class="sub">易支付使用 V1 MD5 签名；商城现金订单可直接跳转收银台，管理员可查询补单并对未发货商城订单发起退款。设置公网 HTTPS 网关、PID、KEY 后生效。Meilisearch 未配置时仍使用 D1 搜索。</p>' +
       '<div class="admin-divider"></div><div class="card-head"><h3>AI 内容助手</h3><button class="action-btn" id="cfgOpenAi">打开 AI 助手</button></div>' +
       '<div class="row3">' + App.field('OpenAI 兼容 API 根地址',App.input('cfAiUrl',c.ai_base_url||'','例如 https://api.example.com/v1')) +
       App.field('模型名称',App.input('cfAiModel',c.ai_model||'','例如 gpt-4o-mini')) +
       App.field('API Key',App.input('cfAiKey','','请输入 API Key','password')) + '</div>' +
-      '<p class="sub">仅在管理员点击生成时，将所选内容的文字字段发送给已配置的模型。生成结果不会自动写回数据库，需审核后手动采用。</p>' +
+      App.field('开放访客 AI 自然语言搜索', App.select('cfAiSearch', [{ value: '0', label: '关闭' }, { value: '1', label: '开启（每 IP 每小时最多 8 次）' }], c.ai_semantic_search || '0')) +
+      '<p class="sub">运营助手仅在管理员点击生成时发送所选文字字段。访客自然语言搜索需单独开启，每个 IP 每小时限 8 次；仅发送搜索描述和精选候选作品信息，不写入搜索历史。</p>' +
       '<div class="admin-divider"></div><div class="card-head"><h3>Web Push 通知</h3><button class="action-btn" id="cfgPushGenerate">生成 VAPID 密钥</button></div>' +
       '<div class="sub" id="cfgPushStatus">正在读取推送状态…</div>' +
       App.field('VAPID 联系方式', App.input('cfPushSubject', c.push_vapid_subject || 'mailto:admin@example.com', 'mailto:管理员邮箱')) +
@@ -417,14 +445,17 @@
         user_status: App.val('cfUserStatus'), user_reg_points: App.val('cfRegPoints'),
         user_invite_status: App.val('cfInviteStatus'), user_invite_points: App.val('cfInvitePoints'), user_invited_points: App.val('cfInvitedPoints'),
         user_email_required: App.val('cfEmailRequired'), user_email_verification: App.val('cfEmailVerify'),
+        security_turnstile_enabled: App.val('cfTurnstileEnabled'), turnstile_site_key: App.val('cfTurnstileSite'),
         user_post_audit: App.val('cfPostAudit'),
         mail_smtp_host: App.val('cfMailHost'), mail_smtp_port: App.val('cfMailPort'),
         mail_smtp_username: App.val('cfMailUser'), mail_from: App.val('cfMailFrom'),
         mail_smtp_secure: App.val('cfMailSecure'), mail_smtp_starttls: App.val('cfMailStarttls'), mail_smtp_auth_type: App.val('cfMailAuth'),
-        payment_checkout_url: App.val('cfPayUrl'), payment_query_url: App.val('cfPayQueryUrl'), payment_merchant_id: App.val('cfPayMerchant'),
-        payment_currency: App.val('cfPayCurrency'), payment_products: App.val('cfPayProducts'),
+        payment_provider: App.val('cfPayProvider'), payment_checkout_url: App.val('cfPayUrl'), payment_query_url: App.val('cfPayQueryUrl'), payment_merchant_id: App.val('cfPayMerchant'),
+        payment_epay_type: App.val('cfPayType'), payment_currency: 'CNY', payment_products: App.val('cfPayProducts'),
         meilisearch_url: App.val('cfMeiliUrl'),
+        search_terms_logging: App.val('cfSearchTerms'),
         ai_base_url: App.val('cfAiUrl'), ai_model: App.val('cfAiModel'),
+        ai_semantic_search: App.val('cfAiSearch'),
         push_vapid_subject: App.val('cfPushSubject'),
         comment_status: App.val('cfCommentStatus'),
         comment_audit: App.val('cfCommentAudit'),
@@ -445,18 +476,20 @@
       if (meiliKey) payload.meilisearch_api_key = meiliKey;
       var aiKey = App.val('cfAiKey');
       if (aiKey) payload.ai_api_key = aiKey;
+      var turnstileSecret = App.val('cfTurnstileSecret');
+      if (turnstileSecret) payload.turnstile_secret_key = turnstileSecret;
       var r = await App.req('/config', { method: 'POST', body: payload });
       if (r.code === 0) {
         App.toast('系统配置已保存');
         document.getElementById('cfNewPwd').value = '';
-        ['cfMailPassword','cfPaySecret','cfMeiliKey','cfAiKey'].forEach(function(id){var field=document.getElementById(id);if(field)field.value='';});
+        ['cfMailPassword','cfPaySecret','cfMeiliKey','cfAiKey','cfTurnstileSecret'].forEach(function(id){var field=document.getElementById(id);if(field)field.value='';});
       } else App.toast(r.msg || '保存失败', true);
     });
     App.on('cfgStorageTestBtn', 'click', async function(){var r=await App.req('/cloud/media/storage/test',{method:'POST',body:{}});App.toast(r.msg||'测试完成',r.code!==0);});
     App.on('cfgMailTest', 'click', async function(){var email=App.val('cfMailTestTo');if(!email){App.toast('请填写测试收件邮箱',true);return;}var r=await App.req('/config/mail/test',{method:'POST',body:{email:email}});App.toast(r.msg||'测试邮件发送完成',r.code!==0);});
     App.on('cfgManageTgAccounts', 'click', function(){App.nav('media');});
     App.on('cfgOpenAi', 'click', function(){App.nav('ai');});
-    async function loadSearchStats(){var s=await App.req('/cloud/search/stats?days=30');if(s.code!==0)return;var d=s.data||{},t=d.totals||{};var status=document.getElementById('cfgSearchStatus');if(status)status.textContent='近 30 天搜索 '+Number(t.searches||0)+' 次 · 零结果 '+Number(t.empty||0)+' 次 · Meilisearch '+Number(t.meilisearch||0)+' 次 · 最近同步 '+(d.last_sync?App.fmtTime(d.last_sync):'未同步');var host=document.getElementById('cfgSearchStats');if(host)host.innerHTML=(d.days||[]).map(function(day){return '<span style="display:inline-block;margin:3px 8px 3px 0">'+App.esc(day.day)+'：'+Number(day.searches||0)+' 次（零结果 '+Number(day.empty||0)+'）</span>';}).join('');}
+    async function loadSearchStats(){var s=await App.req('/cloud/search/stats?days=30');if(s.code!==0)return;var d=s.data||{},t=d.totals||{};var status=document.getElementById('cfgSearchStatus');if(status)status.textContent='近 30 天搜索 '+Number(t.searches||0)+' 次 · 零结果 '+Number(t.empty||0)+' 次 · Meilisearch '+Number(t.meilisearch||0)+' 次 · 最近同步 '+(d.last_sync?App.fmtTime(d.last_sync):'未同步');var host=document.getElementById('cfgSearchStats');if(host)host.innerHTML='<strong>热词（'+(d.hotwords_enabled?'已开启':'需在设置中开启')+'）</strong><div>'+(d.hotwords||[]).map(function(word){return '<span style="display:inline-block;margin:4px 8px 4px 0;padding:3px 7px;border:1px solid var(--border-color,#ddd);border-radius:12px">'+App.esc(word.query_text)+' · '+Number(word.searches||0)+' 次 · 零结果 '+Number(word.empty||0)+'</span>';}).join('')+'</div><div>'+(d.days||[]).map(function(day){return '<span style="display:inline-block;margin:3px 8px 3px 0">'+App.esc(day.day)+'：'+Number(day.searches||0)+' 次（零结果 '+Number(day.empty||0)+'）</span>';}).join('')+'</div>';}
     loadSearchStats();
     App.on('cfgSearchSync','click',async function(){var button=document.getElementById('cfgSearchSync');if(button)button.disabled=true;var result=await App.req('/cloud/search/sync',{method:'POST',body:{}});App.toast(result.msg||'索引同步完成',result.code!==0);if(button)button.disabled=false;loadSearchStats();});
     async function loadPushStatus(){var result=await App.req('/cloud/push/status');if(result.code!==0)return;var data=result.data||{},status=document.getElementById('cfgPushStatus'),button=document.getElementById('cfgPushGenerate');if(status)status.textContent=(data.configured?'VAPID 已配置':'尚未配置 VAPID')+' · '+Number(data.subscriptions||0)+' 个设备订阅 · '+Number(data.members||0)+' 位会员';if(button){button.disabled=Boolean(data.configured);button.textContent=data.configured?'VAPID 已配置':'生成 VAPID 密钥';}}
@@ -466,7 +499,8 @@
   };
 
   Views.ai = async function(host){
-    host.innerHTML='<div class="admin-card"><div class="card-head"><h3>AI 内容助手</h3><span class="sub" id="aiConfigStatus">读取配置中…</span></div><div class="row3"><div class="form-group"><label class="form-label">内容模型</label><select id="aiContentModel" class="admin-select"><option value="vod">视频</option><option value="art">文章</option><option value="topic">专题</option><option value="actor">明星</option><option value="role">角色</option><option value="manga">漫画</option><option value="website">网址</option></select></div>'+App.field('内容 ID',App.input('aiRecordId','','必填','number'))+'<div class="form-group"><label class="form-label">任务</label><select id="aiTask" class="admin-select"><option value="summary">撰写简介</option><option value="metadata">标签与分类建议</option><option value="seo">SEO 标题与描述</option></select></div></div><div class="toolbar"><button class="btn-create" id="aiGenerate">生成建议</button><button class="action-btn" id="aiCopy">复制结果</button></div>'+App.field('AI 建议（需人工审核）',App.textarea('aiSuggestion','',14))+'<p class="sub">AI 只读取所选内容的文字字段。生成结果不自动保存，避免未审核内容覆盖现有资料。</p></div>';
+    host.innerHTML='<div class="admin-card"><div class="card-head"><h3>AI 内容助手</h3><span class="sub" id="aiConfigStatus">读取配置中…</span></div><div class="row3"><div class="form-group"><label class="form-label">内容模型</label><select id="aiContentModel" class="admin-select"><option value="vod">视频</option><option value="art">文章</option><option value="topic">专题</option><option value="actor">明星</option><option value="role">角色</option><option value="manga">漫画</option><option value="website">网址</option><option value="user">会员</option></select></div>'+App.field('内容 ID / 会员 ID',App.input('aiRecordId','','必填','number'))+'<div class="form-group"><label class="form-label">任务</label><select id="aiTask" class="admin-select"><option value="summary">撰写简介</option><option value="metadata">标签与分类建议</option><option value="seo">SEO 标题与描述</option><option value="recommendations">影片内容推荐</option><option value="quality">内容质量评分</option><option value="profile">会员兴趣画像</option></select></div></div><div class="toolbar"><button class="btn-create" id="aiGenerate">生成建议</button><button class="action-btn" id="aiCopy">复制结果</button></div>'+App.field('AI 建议（需人工审核）',App.textarea('aiSuggestion','',14))+'<p class="sub">推荐只从站内影片候选中挑选；会员画像只发送不含身份信息的汇总行为数据。生成结果不会自动写回。</p></div>';
+    var aiModel=document.getElementById('aiContentModel'),aiTask=document.getElementById('aiTask');function syncAiTaskOptions(){var isMember=aiModel.value==='user',isVod=aiModel.value==='vod';Array.from(aiTask.options).forEach(function(option){option.hidden=option.value==='profile'?!isMember:option.value==='recommendations'?!isVod:isMember;});if(isMember)aiTask.value='profile';else if(aiTask.value==='profile'||(aiTask.value==='recommendations'&&!isVod))aiTask.value='summary';}aiModel.addEventListener('change',syncAiTaskOptions);syncAiTaskOptions();
     var status=await App.req('/cloud/ai/status');var statusNode=document.getElementById('aiConfigStatus');if(statusNode){var d=status.data||{};statusNode.textContent=d.configured?'已配置 · '+App.esc(d.model):'未配置，请先在系统设置填写 API 根地址、模型和 Key';}
     App.on('aiGenerate','click',async function(){var button=document.getElementById('aiGenerate');button.disabled=true;try{var result=await App.req('/cloud/ai/generate',{method:'POST',body:{model:App.val('aiContentModel'),record_id:App.intVal('aiRecordId'),task:App.val('aiTask')}});if(result.code!==0){App.toast(result.msg||'生成失败',true);return;}document.getElementById('aiSuggestion').value=(result.data||{}).suggestion||'';App.toast(result.msg||'生成完成');}finally{button.disabled=false;}});
     App.on('aiCopy','click',async function(){var value=App.val('aiSuggestion');if(!value){App.toast('没有可复制的结果',true);return;}try{await navigator.clipboard.writeText(value);App.toast('已复制');}catch{App.toast('浏览器不允许复制，请手动选择文本',true);}});

@@ -155,7 +155,7 @@ export class ThemeService {
   /**
    * 获取全部主题配置（合并默认值与数据库覆盖值）
    */
-  static async getAll(db: D1Database): Promise<Record<string, string>> {
+  static async getAll(db: D1Database, hostname = '', mobile = false): Promise<Record<string, string>> {
     const result: Record<string, string> = {};
     for (const [k, v] of Object.entries(DEFAULT_THEME)) {
       result[k] = v.value;
@@ -166,6 +166,21 @@ export class ThemeService {
     }>();
     for (const r of rows.results || []) {
       result[r.cfg_key] = r.cfg_value;
+    }
+    const host = String(hostname || '').trim().toLowerCase().replace(/:\d+$/, '');
+    if (host && !['localhost', '127.0.0.1'].includes(host)) {
+      const site = await db.prepare('SELECT theme_json,mobile_theme_json FROM site_host_config WHERE hostname=? AND status=1 LIMIT 1')
+        .bind(host).first<{ theme_json: string; mobile_theme_json: string }>().catch(() => null);
+      const override = (raw: string) => {
+        try {
+          const parsed = JSON.parse(raw || '{}');
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+          for (const [key, value] of Object.entries(parsed)) {
+            if (Object.prototype.hasOwnProperty.call(DEFAULT_THEME, key) && key !== 'theme.script.custom' && ['string','number','boolean'].includes(typeof value)) result[key] = String(value).slice(0, 2000);
+          }
+        } catch {}
+      };
+      if (site) { override(site.theme_json); if (mobile) override(site.mobile_theme_json); }
     }
     return result;
   }

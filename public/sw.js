@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'maccms-static-v1';
+const STATIC_CACHE = 'maccms-static-v6';
 const CORE_FILES = [
   '/offline.html',
   '/manifest.webmanifest',
@@ -6,6 +6,7 @@ const CORE_FILES = [
   '/static/theme/css/style.css',
   '/static/theme/css/white.css',
   '/static/theme/css/maccms.css',
+  '/static/theme/css/serverless-video.css',
   '/static/theme/theme.js',
   '/static/theme/layout.js'
 ];

@@ -810,11 +810,19 @@ export class VodService {
   /**
    * 获取所有系统全局配置
    */
-  static async getConfigs(db: D1Database): Promise<Record<string, string>> {
+  static async getConfigs(db: D1Database, hostname = ''): Promise<Record<string, string>> {
     const rows = await db.prepare('SELECT key, value FROM config').all<{ key: string; value: string }>();
     const result: Record<string, string> = {};
     for (const r of rows.results || []) {
       result[r.key] = r.value;
+    }
+    const host = String(hostname || '').trim().toLowerCase().replace(/:\d+$/, '');
+    if (host && !['localhost', '127.0.0.1'].includes(host)) {
+      const site = await db.prepare(`SELECT site_name,site_url,site_keywords,site_description FROM site_host_config
+        WHERE hostname=? AND status=1 LIMIT 1`).bind(host).first<{ site_name: string; site_url: string; site_keywords: string; site_description: string }>().catch(() => null);
+      if (site) {
+        for (const key of ['site_name','site_url','site_keywords','site_description'] as const) if (site[key]) result[key] = site[key];
+      }
     }
     return result;
   }

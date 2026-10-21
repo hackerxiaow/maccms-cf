@@ -34,7 +34,7 @@
             <!-- 播放器快捷操作面板 -->
             <div class="hl-player-setups hl-text-white hl-tran5" id="playerSetups">
               <div class="hl-setups-wrap">
-                <label style="display:inline-flex;align-items:center;gap:5px;margin:0 8px;color:#fff;font-size:.82rem;">倍速<select id="playbackSpeed" aria-label="播放倍速" style="padding:4px 6px;border-radius:4px;"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1">1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select></label><span id="trialCountdown" style="margin:0 8px;font-size:.82rem;"></span>
+                <label style="display:inline-flex;align-items:center;gap:5px;margin:0 8px;color:#fff;font-size:.82rem;">画质 / 线路<select id="qualityChoice" aria-label="选择画质或播放线路" style="max-width:150px;padding:4px 6px;border-radius:4px;"></select></label><label style="display:inline-flex;align-items:center;gap:5px;margin:0 8px;color:#fff;font-size:.82rem;">倍速<select id="playbackSpeed" aria-label="播放倍速" style="padding:4px 6px;border-radius:4px;"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1">1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select></label><span id="trialCountdown" style="margin:0 8px;font-size:.82rem;"></span>
                 <a href="javascript:;" id="btnRefresh"><i class="iconfont hl-icon-shuaxin"></i><span>刷新</span></a>
                 <a href="javascript:;" id="btnPrev"><i class="iconfont hl-icon-shangyiji"></i><span>上一集</span></a>
                 <a href="javascript:;" id="btnNext"><i class="iconfont hl-icon-xiayiji"></i><span>下一集</span></a>
@@ -117,7 +117,7 @@
 
 <script src="/static/theme/js/jquery.min.js"></script>
 <script src="/static/theme/theme.js"></script>
-<script src="/static/theme/layout.js"></script>
+<script src="/static/theme/layout.js?v=20261021d"></script>
 <script src="https://cdn.jsdelivr.net/npm/hls.js/dist/hls.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.js"></script>
 <script>
@@ -202,6 +202,7 @@ function renderSources() {
   var groups = vod.play_groups || [];
   if (!groups.length) { $('#playlistBox').html('<div class="hl-empty">暂无可播放资源</div>'); return; }
   if (sid >= groups.length) sid = 0;
+  renderQualityChoices();
 
   var tabs = $('#sourceTabs');
   var boxes = $('#sourceBoxes');
@@ -210,7 +211,8 @@ function renderSources() {
   boxes.empty();
 
   groups.forEach(function (g, gi) {
-    var btn = $('<a class="hl-tabs-btn' + (gi === sid ? ' active' : '') + '"><i class="iconfont hl-icon-shipin"></i>&nbsp;' + U.esc(g.from.toUpperCase()) + '</a>');
+    var quality = detectQuality(g.from + ' ' + ((g.urls[nid] || {}).name || ''));
+    var btn = $('<a class="hl-tabs-btn' + (gi === sid ? ' active' : '') + '"><i class="iconfont hl-icon-shipin"></i>&nbsp;' + U.esc(quality ? quality + ' · ' + g.from.toUpperCase() : g.from.toUpperCase()) + '</a>');
     btn.data('gi', gi);
     tabs.append(btn);
 
@@ -229,6 +231,33 @@ function renderSources() {
   });
 
   Interact.bindShowAll($('#playlistBox')[0]);
+}
+
+function detectQuality(value) {
+  var text = String(value || '').toLowerCase();
+  var match = text.match(/(?:8k|4k|2k|2160p|1440p|1080p|720p|576p|480p|360p)/i);
+  if (match) return match[0].toUpperCase();
+  if (text.indexOf('蓝光') >= 0) return '蓝光';
+  if (text.indexOf('超清') >= 0) return '超清';
+  if (text.indexOf('高清') >= 0) return '高清';
+  if (text.indexOf('标清') >= 0) return '标清';
+  return '';
+}
+
+function renderQualityChoices() {
+  var groups = vod.play_groups || [], current = groups[sid], episode = current && current.urls ? current.urls[nid] : null;
+  if (!episode) return;
+  var choices = [];
+  groups.forEach(function (group, index) {
+    var matchIndex = group.urls.findIndex(function (item) { return String(item.name || '').trim() === String(episode.name || '').trim(); });
+    if (matchIndex < 0 && group.urls[nid]) matchIndex = nid;
+    if (matchIndex < 0 || !group.urls[matchIndex]) return;
+    var quality = detectQuality(group.from + ' ' + group.urls[matchIndex].name);
+    choices.push({ value: index + ':' + matchIndex, sid: index, nid: matchIndex, label: (quality ? quality + ' · ' : '') + (group.from || '线路 ' + (index + 1)) });
+  });
+  var select = $('#qualityChoice');
+  select.html(choices.map(function (choice) { return '<option value="' + choice.value + '">' + U.esc(choice.label) + '</option>'; }).join(''));
+  select.val(sid + ':' + nid).prop('disabled', choices.length < 2);
 }
 
 function bindGlobalEvents() {
@@ -254,6 +283,11 @@ function bindGlobalEvents() {
 
   $('#btnNext').on('click', playNext);
   $('#btnPrev').on('click', playPrev);
+  $('#qualityChoice').on('change', function () {
+    var values = String($(this).val() || '').split(':').map(Number);
+    if (values.length !== 2 || !Number.isInteger(values[0]) || !Number.isInteger(values[1])) return;
+    sid = values[0]; nid = values[1]; renderSources(); playEpisode();
+  });
   $('#btnRefresh').on('click', function () { playEpisode(); });
   $('#btnSetups').on('click', function () { $('#playerSetups').toggleClass('active'); });
   var storedSpeed=Number(localStorage.getItem('maccms_playback_speed')||1);

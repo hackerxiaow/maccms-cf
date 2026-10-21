@@ -87,9 +87,26 @@ app.route('/api', apiRouter);
 // 4. 挂载后台管理系统 API
 app.route('/api/admin', adminRouter);
 
+app.get('/page/:slug', async (c) => {
+  const slug = String(c.req.param('slug') || '').toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{1,62}$/.test(slug)) return c.text('Not found', 404);
+  const page = await c.env.DB.prepare(`SELECT title,description,keywords,body,updated_at FROM site_page WHERE slug=? AND status=1 LIMIT 1`)
+    .bind(slug).first<{ title: string; description: string; keywords: string; body: string; updated_at: number }>();
+  if (!page) return c.text('Not found', 404);
+  const escapeHtml = (value: unknown) => String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const body = String(page.body || '').trim().split(/\n\s*\n/).filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`).join('\n');
+  const description = escapeHtml(page.description || String(page.body || '').replace(/\s+/g, ' ').slice(0, 180));
+  const base = String((await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname)).site_url || c.env.SITE_URL || new URL(c.req.url).origin).replace(/\/$/, '');
+  const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(page.title)}</title><meta name="description" content="${description}"><meta name="keywords" content="${escapeHtml(page.keywords)}"><link rel="canonical" href="${base}/page/${encodeURIComponent(slug)}"><style>body{margin:0;background:#f5f7fa;color:#1f2937;font:16px/1.8 system-ui,-apple-system,"PingFang SC",sans-serif}main{box-sizing:border-box;width:min(900px,calc(100% - 32px));margin:48px auto;padding:32px;background:white;border-radius:14px;box-shadow:0 4px 24px #18263a12}h1{margin:0 0 22px;font-size:clamp(26px,5vw,38px);line-height:1.3}p{white-space:normal;margin:0 0 1.25em}a{color:#168b67}@media(max-width:600px){main{margin:16px auto;padding:22px 18px}}</style></head><body><main><a href="/">返回首页</a><h1>${escapeHtml(page.title)}</h1><article>${body}</article><small>更新于 ${new Date(Number(page.updated_at || 0) * 1000).toLocaleDateString('zh-CN')}</small></main></body></html>`;
+  return c.html(html, 200, { 'Cache-Control': 'public, max-age=300, s-maxage=900', 'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" });
+});
+
 // RSS feed for readers and content-discovery services.
 app.get('/rss.xml', async (c) => {
-  const config = await VodService.getConfigs(c.env.DB);
+  const config = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
   const base = String(config.site_url || c.env.SITE_URL || new URL(c.req.url).origin).replace(/\/$/, '');
   const [vod, art, role, plot] = await Promise.all([
     c.env.DB.prepare('SELECT vod_id AS id,vod_name AS title,vod_blurb AS summary,vod_time AS published FROM vod WHERE vod_status=1 ORDER BY vod_time DESC LIMIT 80')
@@ -122,7 +139,7 @@ app.get('/rss.xml', async (c) => {
 });
 app.get('/rss', (c) => c.redirect('/rss.xml', 301));
 app.get('/robots.txt', async (c) => {
-  const config = await VodService.getConfigs(c.env.DB);
+  const config = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
   const base = String(config.site_url || c.env.SITE_URL || new URL(c.req.url).origin).replace(/\/$/, '');
   return c.text(`User-agent: *\nDisallow: /admin\nDisallow: /api/\nSitemap: ${base}/sitemap.xml`, 200, {
     'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=300',
@@ -131,8 +148,8 @@ app.get('/robots.txt', async (c) => {
 
 // 动态 XML Sitemap：把 MacCMS 内容详情映射到当前静态前台的真实 URL 结构。
 app.get('/sitemap.xml', async (c) => {
-  const base = String((await VodService.getConfigs(c.env.DB)).site_url || c.env.SITE_URL || new URL(c.req.url).origin).replace(/\/$/, '');
-  const [vod, art, topic, actor, role, plot, manga] = await Promise.all([
+  const base = String((await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname)).site_url || c.env.SITE_URL || new URL(c.req.url).origin).replace(/\/$/, '');
+  const [vod, art, topic, actor, role, plot, manga, website, live, pages] = await Promise.all([
     c.env.DB.prepare('SELECT vod_id AS id, vod_time AS updated FROM vod WHERE vod_status = 1 ORDER BY vod_time DESC LIMIT 10000').all<{ id: number; updated: number }>(),
     c.env.DB.prepare('SELECT art_id AS id, art_time AS updated FROM art WHERE art_status = 1 ORDER BY art_time DESC LIMIT 10000').all<{ id: number; updated: number }>(),
     c.env.DB.prepare('SELECT topic_id AS id, topic_time AS updated FROM topic WHERE topic_status = 1 ORDER BY topic_time DESC LIMIT 10000').all<{ id: number; updated: number }>(),
@@ -140,6 +157,9 @@ app.get('/sitemap.xml', async (c) => {
     c.env.DB.prepare('SELECT role_id AS id, role_time AS updated FROM role WHERE role_status = 1 ORDER BY role_time DESC LIMIT 10000').all<{ id: number; updated: number }>(),
     c.env.DB.prepare('SELECT vod_id AS id, vod_time AS updated FROM vod WHERE vod_status = 1 AND COALESCE(vod_plot,0)>0 AND COALESCE(vod_plot_name,\'\')<>\'\' ORDER BY vod_time DESC LIMIT 10000').all<{ id: number; updated: number }>(),
     c.env.DB.prepare('SELECT manga_id AS id, manga_time AS updated FROM manga WHERE manga_status = 1 ORDER BY manga_time DESC LIMIT 10000').all<{ id: number; updated: number }>(),
+    c.env.DB.prepare('SELECT website_id AS id, website_time AS updated FROM website WHERE website_status = 1 ORDER BY website_time DESC LIMIT 10000').all<{ id: number; updated: number }>(),
+    c.env.DB.prepare('SELECT live_id AS id, live_time AS updated FROM live_channel WHERE live_status = 1 ORDER BY live_time DESC LIMIT 10000').all<{ id: number; updated: number }>(),
+    c.env.DB.prepare('SELECT slug,updated_at AS updated FROM site_page WHERE status=1 ORDER BY updated_at DESC LIMIT 500').all<{ slug: string; updated: number }>(),
   ]);
   const entries: Array<{ loc: string; updated: number }> = [
     ...(vod.results || []).map((row) => ({ loc: `${base}/detail.html?id=${row.id}`, updated: row.updated })),
@@ -149,9 +169,12 @@ app.get('/sitemap.xml', async (c) => {
     ...(role.results || []).map((row) => ({ loc: `${base}/role.html?id=${row.id}`, updated: row.updated })),
     ...(plot.results || []).map((row) => ({ loc: `${base}/plot.html?id=${row.id}`, updated: row.updated })),
     ...(manga.results || []).map((row) => ({ loc: `${base}/manga.html?id=${row.id}`, updated: row.updated })),
+    ...(website.results || []).map((row) => ({ loc: `${base}/website.html?id=${row.id}`, updated: row.updated })),
+    ...(live.results || []).map((row) => ({ loc: `${base}/live.html?id=${row.id}`, updated: row.updated })),
+    ...(pages.results || []).map((row) => ({ loc: `${base}/page/${encodeURIComponent(row.slug)}`, updated: row.updated })),
   ];
   const escapeXml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
-  const urls = [`${base}/`, `${base}/type.html`, `${base}/topic.html`, `${base}/art.html`, `${base}/actor.html`, `${base}/role.html`, `${base}/plot.html`, `${base}/live.html`, `${base}/manga.html`]
+  const urls = [`${base}/`, `${base}/type.html`, `${base}/topic.html`, `${base}/art.html`, `${base}/actor.html`, `${base}/role.html`, `${base}/plot.html`, `${base}/live.html`, `${base}/manga.html`, `${base}/website.html`]
     .map((loc) => `<url><loc>${escapeXml(loc)}</loc></url>`);
   for (const entry of entries) {
     const lastmod = entry.updated ? new Date(entry.updated * 1000).toISOString() : '';
@@ -169,6 +192,7 @@ app.get('/media/*', async (c) => {
   try { key = decodeURIComponent(requestUrl.pathname.slice('/media/'.length)); }
   catch { return c.text('Invalid media path', 400); }
   if (!key || key.includes('..') || key.startsWith('/')) return c.text('Invalid media path', 400);
+  if (key.startsWith('maccms-db-backups/')) return c.text('Media not found', 404);
   if (key.startsWith('tg/')) {
     const asset = await c.env.DB.prepare(`SELECT provider_ref,content_type FROM media_asset
       WHERE storage_provider='telegram' AND public_url=? LIMIT 1`).bind(`${requestUrl.origin}${requestUrl.pathname}`).first<{ provider_ref: string; content_type: string }>();
@@ -259,6 +283,7 @@ export default {
       (async () => {
         try {
           await runDueCloudTasks(env);
+          await env.DB.prepare('DELETE FROM playback_trial_session WHERE expires_at<?').bind(Math.floor(Date.now() / 1000) - 86400).run().catch(() => {});
           const nodes = await env.DB
             .prepare('SELECT * FROM collect_node WHERE status = 1')
             .all<CollectNodeItem>();

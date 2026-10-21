@@ -21,6 +21,9 @@ import { SearchService } from '../services/search.ts';
 import { PaymentService } from '../services/payment.ts';
 import { WebPushService } from '../services/web-push.ts';
 import { ContentTranslationService } from '../services/content-translation.ts';
+import { AiService } from '../services/ai.ts';
+import { TurnstileService } from '../services/turnstile.ts';
+import { PlaybackTrialService } from '../services/playback-trial.ts';
 
 export const apiRouter = new Hono<{ Bindings: Bindings }>();
 
@@ -41,7 +44,7 @@ const sanitizeArtPublic = <T extends Record<string, any>>(item: T, includeConten
 
 // 0. 主题配置接口 (前台页面启动时一次性拉取，用于应用配色/圆角/区块开关)
 apiRouter.get('/theme', async (c) => {
-  const cfg = await ThemeService.getAll(c.env.DB);
+  const cfg = await ThemeService.getAll(c.env.DB, new URL(c.req.url).hostname, /mobile/i.test(c.req.header('User-Agent') || ''));
   return c.json({
     code: 0,
     msg: 'ok',
@@ -50,7 +53,7 @@ apiRouter.get('/theme', async (c) => {
       cssVars: ThemeService.buildCssVars(cfg),
     },
   }, 200, {
-    'Cache-Control': 'public, max-age=30',
+    'Cache-Control': 'public, max-age=30', 'Vary': 'User-Agent',
   });
 });
 
@@ -201,6 +204,30 @@ apiRouter.get('/vod/suggest', async (c) => {
 });
 
 // Unified public search across the content models used by MacCMS.
+apiRouter.get('/search/semantic/status', async (c) => {
+  const [enabled, ai] = await Promise.all([
+    c.env.DB.prepare("SELECT value FROM config WHERE key='ai_semantic_search'").first<{ value: string }>(),
+    AiService.status(c.env.DB),
+  ]);
+  return c.json({ code: 0, data: { enabled: enabled?.value === '1' && ai.configured } });
+});
+
+apiRouter.post('/search/semantic', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const query = String(body.query || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (query.length < 2) return c.json({ code: 400, msg: '请输入至少 2 个字符的搜索描述' }, 400);
+  const enabled = await c.env.DB.prepare("SELECT value FROM config WHERE key='ai_semantic_search'").first<{ value: string }>();
+  if (enabled?.value !== '1') return c.json({ code: 403, msg: '智能搜索尚未由管理员启用' }, 403);
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  if (!await consumeRateLimit(c.env.DB, `semantic-search:${ip}`, 8, 3600)) return c.json({ code: 429, msg: '智能搜索次数已达上限，请稍后重试' }, 429);
+  try {
+    const items = await AiService.semanticSearch(c.env, query);
+    return c.json({ code: 0, msg: 'ok', data: { query, items } });
+  } catch (error) {
+    return c.json({ code: 503, msg: error instanceof Error ? error.message : '智能搜索暂不可用' }, 503);
+  }
+});
+
 apiRouter.get('/search/all', async (c) => {
   const wd = String(c.req.query('wd') || '').trim().slice(0, 100);
   if (wd.length < 1) return c.json({ code: 400, msg: '请输入搜索关键词' }, 400);
@@ -297,11 +324,26 @@ apiRouter.post('/vod/resolve', async (c) => {
     ? (permission as { canDownload: boolean }).canDownload
     : (permission as { canPlay: boolean }).canPlay;
   if (!canAccess) return c.json({ code: 403, msg: permission.reason || '当前账号没有访问权限', data: permission }, 403);
+  const trialSeconds = mode === 'play' ? Number((permission as { trialSeconds?: number }).trialSeconds || 0) : 0;
+  if (trialSeconds > 0 && String((permission as { reason?: string }).reason || '') === '试看') {
+    try {
+      const trial = await PlaybackTrialService.begin(c.env, {
+        userId: userId || 0, ip: c.req.header('CF-Connecting-IP') || '', userAgent: c.req.header('User-Agent') || '',
+        vodId, sid, nid, sourceUrl: episode.url, trialSeconds, origin: new URL(c.req.url).origin,
+      });
+      return c.json({ code: 0, data: { mode, vod_id: vodId, sid, nid, name: episode.name, from: episode.from || group.from, url: trial.url,
+        trial_seconds: trial.trial_seconds, trial_expires_at: trial.expires_at, trial_enforced: true } });
+    } catch (error) {
+      return c.json({ code: 403, msg: error instanceof Error ? error.message : '此线路不支持安全试看', data: { trial_unsupported: true } }, 403);
+    }
+  }
   return c.json({ code: 0, data: {
     mode, vod_id: vodId, sid, nid, name: episode.name, from: episode.from || group.from,
-    url: episode.url, trial_seconds: mode === 'play' ? Number((permission as { trialSeconds?: number }).trialSeconds || 0) : 0,
+    url: episode.url, trial_seconds: trialSeconds,
   } });
 });
+
+apiRouter.on(['GET', 'HEAD'], '/playback/trial/:token', (c) => PlaybackTrialService.serve(c.env, c.req.param('token'), c.req.raw, new URL(c.req.url).origin));
 
 // 8. 分类树接口
 apiRouter.get('/types', async (c) => {
@@ -410,7 +452,15 @@ apiRouter.get('/plot/detail/:id', async (c) => {
   const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
   const data = await VodService.getPlotDetail(c.env.DB, id, page);
   if (!data) return c.json({ code: 404, msg: '分集剧情不存在' }, 404);
-  return c.json({ code: 0, msg: 'ok', data });
+  const localized = (await ContentTranslationService.apply(c.env.DB, 'vod', [data], c.req.query('lang')))[0];
+  const names = String(localized.vod_plot_name || '').split('$$$');
+  const details = String(localized.vod_plot_detail || '').split('$$$');
+  if (names.some((name) => name.trim()) || details.some((detail) => detail.trim())) {
+    localized.plot_list = names.map((name, index) => ({ page: index + 1, name: name.trim() || `第 ${index + 1} 集`, detail: String(details[index] || '').trim() })).filter((plot) => plot.name || plot.detail);
+    localized.pagecount = localized.plot_list.length;
+    localized.current_plot = localized.plot_list[Math.min(localized.plot_list.length, Math.max(1, page)) - 1];
+  }
+  return c.json({ code: 0, msg: 'ok', data: localized });
 });
 
 // 11. 明星与角色接口
@@ -464,6 +514,46 @@ apiRouter.get('/role/detail/:id', async (c) => {
   return c.json({ code: 0, msg: 'ok', data: localized });
 });
 
+const roleVoterKey = async (c: any, userId: number | undefined): Promise<string> => {
+  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  return AuthUtils.sha256(userId ? `user:${userId}` : `ip:${ip}`);
+};
+
+apiRouter.post('/role/digg', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const roleId = Number(body.id || body.role_id);
+  const type = String(body.type || body.action || '').toLowerCase();
+  if (!Number.isInteger(roleId) || roleId <= 0 || !['up', 'down'].includes(type)) return c.json({ code: 400, msg: '角色或顶踩类型无效' }, 400);
+  const role = await c.env.DB.prepare('SELECT role_id FROM role WHERE role_id=? AND role_status=1').bind(roleId).first();
+  if (!role) return c.json({ code: 404, msg: '角色不存在或已下架' }, 404);
+  const userId = await getUserFromHeader(c);
+  const voterKey = await roleVoterKey(c, userId);
+  if (!await consumeRateLimit(c.env.DB, `role-vote:${voterKey}`, 40, 3600)) return c.json({ code: 429, msg: '评分操作过于频繁，请稍后再试' }, 429);
+  const inserted = await c.env.DB.prepare('INSERT OR IGNORE INTO role_vote(role_id,voter_key,vote_type,created_at) VALUES(?,?,?,?)')
+    .bind(roleId, voterKey, type, Math.floor(Date.now() / 1000)).run();
+  if (Number(inserted.meta.changes || 0)) {
+    await c.env.DB.prepare(`UPDATE role SET role_up=role_up+?,role_down=role_down+? WHERE role_id=?`)
+      .bind(type === 'up' ? 1 : 0, type === 'down' ? 1 : 0, roleId).run();
+  }
+  const counts = await c.env.DB.prepare('SELECT role_up,role_down FROM role WHERE role_id=?').bind(roleId).first<{ role_up: number; role_down: number }>();
+  return c.json({ code: inserted.meta.changes ? 0 : 409, msg: inserted.meta.changes ? '感谢参与评分' : '每个角色只能顶踩一次', data: counts || {} }, inserted.meta.changes ? 200 : 409);
+});
+
+apiRouter.post('/role/score', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const roleId = Number(body.id || body.role_id), score = Number(body.score);
+  if (!Number.isInteger(roleId) || roleId <= 0 || !Number.isInteger(score) || score < 1 || score > 10) return c.json({ code: 400, msg: '角色或评分无效（1 至 10 分）' }, 400);
+  const exists = await c.env.DB.prepare('SELECT role_id FROM role WHERE role_id=? AND role_status=1').bind(roleId).first();
+  if (!exists) return c.json({ code: 404, msg: '角色不存在或已下架' }, 404);
+  const userId = await getUserFromHeader(c), voterKey = await roleVoterKey(c, userId);
+  if (!await consumeRateLimit(c.env.DB, `role-score:${voterKey}`, 40, 3600)) return c.json({ code: 429, msg: '评分操作过于频繁，请稍后再试' }, 429);
+  await c.env.DB.prepare('INSERT INTO role_score_vote(role_id,voter_key,score,created_at) VALUES(?,?,?,?) ON CONFLICT(role_id,voter_key) DO UPDATE SET score=excluded.score,created_at=excluded.created_at')
+    .bind(roleId, voterKey, score, Math.floor(Date.now() / 1000)).run();
+  const average = await c.env.DB.prepare('SELECT AVG(score) AS score,COUNT(*) AS votes FROM role_score_vote WHERE role_id=?').bind(roleId).first<{ score: number; votes: number }>();
+  await c.env.DB.prepare('UPDATE role SET role_score=? WHERE role_id=?').bind(Number((average?.score || 0).toFixed(1)), roleId).run();
+  return c.json({ code: 0, msg: '评分已保存', data: { score: Number((average?.score || 0).toFixed(1)), votes: Number(average?.votes || 0) } });
+});
+
 // 12. 留言与报错接口
 apiRouter.get('/gbook/list', async (c) => {
   const q = c.req.query();
@@ -493,7 +583,7 @@ apiRouter.post('/gbook/add', async (c) => {
 
 // 13. 用户评论与互动
 apiRouter.get('/comment/list', async (c) => {
-  const configs = await VodService.getConfigs(c.env.DB);
+  const configs = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
   if (configs.comment_status === '0') return c.json({ code: 0, msg: '评论功能已关闭', data: [] });
   const mid = parseInt(c.req.query('mid') || '1', 10);
   const rid = parseInt(c.req.query('rid') || '0', 10);
@@ -502,7 +592,7 @@ apiRouter.get('/comment/list', async (c) => {
 });
 
 apiRouter.post('/comment/add', async (c) => {
-  const configs = await VodService.getConfigs(c.env.DB);
+  const configs = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
   if (configs.comment_status === '0') return c.json({ code: 403, msg: '站点已关闭评论功能' }, 403);
   const body = await c.req.json().catch(() => ({}));
   try {
@@ -600,7 +690,7 @@ apiRouter.get('/players', async (c) => {
 
 // 16. 站点公开信息接口
 apiRouter.get('/config', async (c) => {
-  const configs = await VodService.getConfigs(c.env.DB);
+  const configs = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
   return c.json({
     code: 0,
     msg: 'ok',
@@ -613,17 +703,22 @@ apiRouter.get('/config', async (c) => {
   });
 });
 
+apiRouter.get('/security/config', async (c) => {
+  return c.json({ code: 0, data: await TurnstileService.publicConfig(c.env.DB) }, 200, { 'Cache-Control': 'public, max-age=60' });
+});
+
 // ==========================================
 // 会员用户体系 API
 // ==========================================
 
 apiRouter.post('/user/register', async (c) => {
-  const configs = await VodService.getConfigs(c.env.DB);
+  const configs = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
   if (configs.user_status === '0') return c.json({ code: 403, msg: '站点暂未开放会员注册' }, 403);
   const body = await c.req.json().catch(() => ({}));
   try {
     const ip = c.req.header('CF-Connecting-IP') || '';
     if (!await consumeRateLimit(c.env.DB, `register:${ip || 'unknown'}`, 8, 3600)) return c.json({ code: 429, msg: '注册请求过于频繁，请稍后重试' }, 429);
+    await TurnstileService.verify(c.env, body.turnstile_token, ip, c.req.url);
     if (configs.user_email_required === '1' && !String(body.email || '').trim()) return c.json({ code: 400, msg: '请填写邮箱后注册' }, 400);
     const blocked = await c.env.DB.prepare(`SELECT reason FROM user_access_rule WHERE
       ((rule_type='ip' AND rule_value=?) OR (rule_type='username' AND lower(rule_value)=lower(?)))
@@ -651,6 +746,7 @@ apiRouter.post('/user/login', async (c) => {
       || !await consumeRateLimit(c.env.DB, `login:user:${username.toLowerCase()}`, 10, 900)) {
       return c.json({ code: 429, msg: '登录尝试过于频繁，请 15 分钟后重试' }, 429);
     }
+    await TurnstileService.verify(c.env, body.turnstile_token, ip, c.req.url);
     const candidate = await c.env.DB.prepare('SELECT user_id FROM user WHERE user_name=?').bind(username).first<{ user_id: number }>();
     const blocked = await c.env.DB.prepare(`SELECT reason FROM user_access_rule WHERE
       ((rule_type='ip' AND rule_value=?) OR (rule_type='username' AND lower(rule_value)=lower(?)) OR (rule_type='user_id' AND rule_value=?))
@@ -662,7 +758,7 @@ apiRouter.post('/user/login', async (c) => {
       clearRateLimit(c.env.DB, `login:ip:${ip || 'unknown'}`),
       clearRateLimit(c.env.DB, `login:user:${username.toLowerCase()}`),
     ]);
-    const configs = await VodService.getConfigs(c.env.DB);
+    const configs = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
     if (configs.user_email_required === '1' && Number((data.user as any).user_email_verified || 0) !== 1) {
       await c.env.DB.prepare('UPDATE user_session SET revoked_at=? WHERE user_id=? AND revoked_at=0')
         .bind(Math.floor(Date.now() / 1000), data.user.user_id).run();
@@ -682,7 +778,7 @@ apiRouter.post('/user/email/verification/send', async (c) => {
   const password = String(body.password || '');
   const userId = await getUserFromHeader(c);
   try {
-    const settings = await VodService.getConfigs(c.env.DB);
+    const settings = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
     if (settings.user_email_required !== '1' && settings.user_email_verification !== '1') return c.json({ code: 403, msg: '邮箱验证入口暂未开放' }, 403);
     let targetUserId = userId;
     if (!targetUserId) {
@@ -709,7 +805,7 @@ apiRouter.post('/user/email/verification/confirm', async (c) => {
   const email = String(body.email || '').trim().toLowerCase();
   const code = String(body.code || '').trim();
   try {
-    const settings = await VodService.getConfigs(c.env.DB);
+    const settings = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
     if (settings.user_email_required !== '1' && settings.user_email_verification !== '1') return c.json({ code: 403, msg: '邮箱验证入口暂未开放' }, 403);
     if (userId) {
       const current = await c.env.DB.prepare('SELECT user_email FROM user WHERE user_id=? AND user_status=1')
@@ -1179,7 +1275,7 @@ apiRouter.post('/user/sign', async (c) => {
   if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
   const now = Math.floor(Date.now() / 1000);
   const signDay = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
-  const settings = await VodService.getConfigs(c.env.DB);
+  const settings = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
   const points = Math.max(0, Math.min(1000, parseInt(settings.sign_reward_points || '5', 10) || 0));
   const inserted = await c.env.DB.prepare('INSERT OR IGNORE INTO sign_log (user_id,sign_day,points,created_at) VALUES (?,?,?,?)')
     .bind(userId, signDay, points, now).run();
@@ -1266,10 +1362,10 @@ apiRouter.post('/user/coupons/redeem', async (c) => {
 
 apiRouter.get('/user/payment/plans', async (c) => {
   try {
-    const configs = await VodService.getConfigs(c.env.DB);
-    const enabled = Boolean(configs.payment_checkout_url && configs.payment_merchant_id && configs.payment_secret);
+    const paymentStatus = await PaymentService.status(c.env.DB);
+    const enabled = paymentStatus.configured;
     const plans = enabled ? await PaymentService.plans(c.env.DB) : [];
-    return c.json({ code: 0, data: { enabled, plans } });
+    return c.json({ code: 0, data: { enabled, provider: paymentStatus.provider, plans } });
   } catch (error) {
     return c.json({ code: 500, msg: error instanceof Error ? error.message : '支付套餐读取失败' }, 500);
   }
@@ -1295,16 +1391,36 @@ apiRouter.get('/user/payments', async (c) => {
   return c.json({ code: 0, data: rows.results || [] });
 });
 
+apiRouter.get('/user/payment/reconcile/:orderCode', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const orderCode = String(c.req.param('orderCode') || '').slice(0, 80);
+  const owned = await c.env.DB.prepare('SELECT order_code,status FROM payment_intent WHERE order_code=? AND user_id=?')
+    .bind(orderCode, userId).first<{ order_code: string; status: string }>();
+  if (!owned) return c.json({ code: 404, msg: '支付订单不存在' }, 404);
+  if (owned.status === 'paid' || owned.status === 'refunded') return c.json({ code: 0, data: { status: owned.status } });
+  if (!await consumeRateLimit(c.env.DB, `payment-reconcile:user:${userId}`, 8, 600)) return c.json({ code: 429, msg: '订单查询过于频繁，请稍后重试' }, 429);
+  try {
+    const result = await PaymentService.reconcile(c.env, orderCode, new URL(c.req.url).origin);
+    return c.json({ code: 0, data: result });
+  } catch (error) {
+    return c.json({ code: 503, msg: error instanceof Error ? error.message : '支付状态查询失败' }, 503);
+  }
+});
+
 apiRouter.get('/user/feed', async (c) => {
   const userId = await getUserFromHeader(c);
   const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 20));
   const rows = await c.env.DB.prepare(`SELECT p.post_id,p.user_id,u.user_nick,u.user_name,p.content,p.visibility,p.created_at,
       (SELECT COUNT(*) FROM user_post_like l WHERE l.post_id=p.post_id) AS like_count,
+      (SELECT COUNT(*) FROM user_post_comment cm WHERE cm.post_id=p.post_id AND cm.status=1) AS comment_count,
       EXISTS(SELECT 1 FROM user_post_like l WHERE l.post_id=p.post_id AND l.user_id=?) AS liked
+      ,CASE WHEN p.user_id=? THEN 1 ELSE 0 END AS is_mine
+      ,(SELECT group_concat(m.public_url,char(10)) FROM user_post_attachment a JOIN media_asset m ON m.media_id=a.media_id WHERE a.post_id=p.post_id) AS attachment_urls
     FROM user_post p JOIN user u ON u.user_id=p.user_id
     WHERE p.status=1 AND (p.visibility='public' OR p.user_id=? OR (p.visibility='followers' AND EXISTS(
       SELECT 1 FROM user_follow f WHERE f.user_id=? AND f.follow_mid=0 AND f.follow_rid=p.user_id)))
-    ORDER BY p.created_at DESC,p.post_id DESC LIMIT ?`).bind(userId, userId, userId, limit).all();
+    ORDER BY p.created_at DESC,p.post_id DESC LIMIT ?`).bind(userId, userId, userId, userId, limit).all();
   return c.json({ code: 0, data: rows.results || [] });
 });
 
@@ -1324,11 +1440,124 @@ apiRouter.post('/user/posts', async (c) => {
   const content = String(body.content || '').trim();
   const visibility = ['public', 'followers', 'private'].includes(String(body.visibility)) ? String(body.visibility) : 'public';
   if (!content || content.length > 1000) return c.json({ code: 400, msg: '动态内容须为 1 至 1000 个字符' }, 400);
+  const attachmentUrls = Array.isArray(body.attachments) ? Array.from(new Set(body.attachments.map((url: unknown) => String(url).trim()).filter(Boolean))).slice(0, 4) : [];
+  let attachmentRows: Array<{ media_id: number }> = [];
+  if (attachmentUrls.length) {
+    const assets = await c.env.DB.prepare(`SELECT media_id,public_url FROM media_asset WHERE created_by=? AND public_url IN (${attachmentUrls.map(() => '?').join(',')})`)
+      .bind(`social:${userId}`, ...attachmentUrls).all<{ media_id: number; public_url: string }>();
+    attachmentRows = assets.results || [];
+    if (attachmentRows.length !== attachmentUrls.length) return c.json({ code: 400, msg: '动态图片必须由当前账号上传，最多 4 张' }, 400);
+  }
   const audit = await c.env.DB.prepare("SELECT value FROM config WHERE key='user_post_audit'").first<{ value: string }>();
   const status = audit?.value === '1' ? 0 : 1;
   const result = await c.env.DB.prepare('INSERT INTO user_post(user_id,content,visibility,status,created_at) VALUES(?,?,?,?,?)')
     .bind(userId, content, visibility, status, Math.floor(Date.now() / 1000)).run();
-  return c.json({ code: 0, msg: status ? '动态已发布' : '动态已提交审核', data: { post_id: Number(result.meta.last_row_id), status } });
+  const postId = Number(result.meta.last_row_id);
+  if (attachmentRows.length) await c.env.DB.batch(attachmentRows.map((asset) => c.env.DB.prepare('INSERT OR IGNORE INTO user_post_attachment(post_id,media_id,created_at) VALUES(?,?,?)').bind(postId, asset.media_id, Math.floor(Date.now() / 1000))));
+  return c.json({ code: 0, msg: status ? '动态已发布' : '动态已提交审核', data: { post_id: postId, status } });
+});
+
+apiRouter.delete('/user/posts/:id', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const postId = Number(c.req.param('id'));
+  if (!Number.isInteger(postId) || postId <= 0) return c.json({ code: 400, msg: '动态 ID 无效' }, 400);
+  const post = await c.env.DB.prepare('SELECT post_id FROM user_post WHERE post_id=? AND user_id=?').bind(postId, userId).first();
+  if (!post) return c.json({ code: 404, msg: '动态不存在或无权删除' }, 404);
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM user_post_comment WHERE post_id=?').bind(postId),
+    c.env.DB.prepare('DELETE FROM user_post_like WHERE post_id=?').bind(postId),
+    c.env.DB.prepare('DELETE FROM user_post_report WHERE post_id=?').bind(postId),
+    c.env.DB.prepare('DELETE FROM user_post_attachment WHERE post_id=?').bind(postId),
+    c.env.DB.prepare('DELETE FROM user_post WHERE post_id=? AND user_id=?').bind(postId, userId),
+  ]);
+  return c.json({ code: 0, msg: '动态已删除' });
+});
+
+apiRouter.post('/user/posts/upload', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  if (!await consumeRateLimit(c.env.DB, `post-upload:user:${userId}`, 12, 3600)) return c.json({ code: 429, msg: '图片上传过于频繁，请稍后重试' }, 429);
+  let form: FormData;
+  try { form = await c.req.formData(); } catch { return c.json({ code: 400, msg: '请上传图片文件' }, 400); }
+  const file = form.get('file');
+  if (!(file instanceof File) || file.size <= 0 || file.size > 4 * 1024 * 1024) return c.json({ code: 400, msg: '请选择小于 4 MB 的图片' }, 400);
+  const types: Record<string, { ext: string; signature(bytes: Uint8Array): boolean }> = {
+    'image/jpeg': { ext: 'jpg', signature: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+    'image/png': { ext: 'png', signature: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+    'image/gif': { ext: 'gif', signature: (b) => b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 },
+    'image/webp': { ext: 'webp', signature: (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 },
+  };
+  const format = types[file.type], bytes = new Uint8Array(await file.arrayBuffer());
+  if (!format || !format.signature(bytes)) return c.json({ code: 400, msg: '仅支持有效的 JPG、PNG、GIF、WebP 图片' }, 400);
+  const storage = await loadMediaStorageConfig(c.env.DB), bucket = c.env.MEDIA_BUCKET;
+  if (storage.provider === 'r2' && !bucket) return c.json({ code: 503, msg: '图片存储未配置，请绑定 R2 或切换存储后端' }, 503);
+  const origin = new URL(c.req.url).origin;
+  let key = '', providerRef = '', publicUrl = '', mediaId = 0;
+  try {
+    if (storage.provider === 'telegraph') {
+      publicUrl = await uploadToTelegraph(storage, new Blob([bytes], { type: file.type }), file.name || `post.${format.ext}`, file.type);
+      key = `telegraph:${crypto.randomUUID()}`;
+    } else if (storage.provider === 'telegram') {
+      const uploaded = await uploadToTelegram(c.env.DB, storage, new Blob([bytes], { type: file.type }), file.name || `post.${format.ext}`, file.type, origin);
+      key = uploaded.objectKey; providerRef = uploaded.providerRef; publicUrl = uploaded.publicUrl;
+    } else {
+      key = `user-posts/${userId}/${Date.now()}-${crypto.randomUUID()}.${format.ext}`;
+      publicUrl = `${origin}/media/${key}`;
+      await bucket!.put(key, bytes, { httpMetadata: { contentType: file.type, cacheControl: 'public, max-age=31536000, immutable' } });
+    }
+    const result = await c.env.DB.prepare(`INSERT INTO media_asset(object_key,storage_provider,provider_ref,file_name,content_type,file_size,public_url,created_by,created_at)
+      VALUES(?,?,?,?,?,?,?,?,?)`).bind(key, storage.provider, providerRef, String(file.name || `post.${format.ext}`).slice(0, 240), file.type, file.size, publicUrl, `social:${userId}`, Math.floor(Date.now() / 1000)).run();
+    mediaId = Number(result.meta.last_row_id || 0);
+  } catch (error) {
+    if (mediaId) await c.env.DB.prepare('DELETE FROM media_asset WHERE media_id=?').bind(mediaId).run().catch(() => {});
+    if (key) await deleteStoredMedia(storage.provider, bucket, storage, key, publicUrl).catch(() => {});
+    console.error('Member post image upload failed:', error);
+    return c.json({ code: 500, msg: '图片上传失败，请稍后重试' }, 500);
+  }
+  return c.json({ code: 0, msg: '图片已上传', data: { media_id: mediaId, url: publicUrl } });
+});
+
+apiRouter.get('/user/posts/:id/comments', async (c) => {
+  const postId = Number(c.req.param('id')), userId = await getUserFromHeader(c);
+  const post = await c.env.DB.prepare(`SELECT p.post_id FROM user_post p WHERE p.post_id=? AND p.status=1 AND
+    (p.visibility='public' OR p.user_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follow f WHERE f.user_id=? AND f.follow_mid=0 AND f.follow_rid=p.user_id)))`)
+    .bind(postId, userId, userId).first();
+  if (!post) return c.json({ code: 404, msg: '动态不存在或无权查看' }, 404);
+  const rows = await c.env.DB.prepare(`SELECT c.comment_id,c.user_id,c.content,c.created_at,u.user_nick,u.user_name
+    FROM user_post_comment c JOIN user u ON u.user_id=c.user_id WHERE c.post_id=? AND c.status=1 ORDER BY c.comment_id LIMIT 100`).bind(postId).all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+apiRouter.post('/user/posts/:id/comments', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  if (!await consumeRateLimit(c.env.DB, `post-comment:user:${userId}`, 30, 3600)) return c.json({ code: 429, msg: '评论过于频繁，请稍后重试' }, 429);
+  const postId = Number(c.req.param('id')), body = await c.req.json().catch(() => ({})), content = String(body.content || '').trim();
+  if (content.length < 1 || content.length > 500) return c.json({ code: 400, msg: '评论须为 1 至 500 个字符' }, 400);
+  const post = await c.env.DB.prepare(`SELECT p.post_id,p.user_id FROM user_post p WHERE p.post_id=? AND p.status=1 AND
+    (p.visibility='public' OR p.user_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follow f WHERE f.user_id=? AND f.follow_mid=0 AND f.follow_rid=p.user_id)))`)
+    .bind(postId, userId, userId).first<{ post_id: number; user_id: number }>();
+  if (!post) return c.json({ code: 404, msg: '动态不存在或无权查看' }, 404);
+  const now = Math.floor(Date.now() / 1000);
+  const result = await c.env.DB.prepare('INSERT INTO user_post_comment(post_id,user_id,content,status,created_at) VALUES(?,?,?,1,?)').bind(postId, userId, content, now).run();
+  if (post.user_id !== userId) await c.env.DB.prepare(`INSERT INTO user_notification(user_id,title,body,kind,target_url,created_at) VALUES(?,?,?,?,?,?)`)
+    .bind(post.user_id, '动态收到评论', content.slice(0, 100), 'social', '/user.html', now).run();
+  return c.json({ code: 0, msg: '评论已发布', data: { comment_id: Number(result.meta.last_row_id) } });
+});
+
+apiRouter.post('/user/posts/:id/report', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const postId = Number(c.req.param('id')), body = await c.req.json().catch(() => ({}));
+  const reason = String(body.reason || '').trim().slice(0, 250);
+  const exists = await c.env.DB.prepare(`SELECT p.post_id FROM user_post p WHERE p.post_id=? AND p.status=1 AND p.user_id<>? AND
+    (p.visibility='public' OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follow f WHERE f.user_id=? AND f.follow_mid=0 AND f.follow_rid=p.user_id)))`)
+    .bind(postId, userId, userId).first();
+  if (!exists) return c.json({ code: 404, msg: '动态不存在' }, 404);
+  const inserted = await c.env.DB.prepare(`INSERT OR IGNORE INTO user_post_report(post_id,user_id,reason,created_at) VALUES(?,?,?,?)`)
+    .bind(postId, userId, reason, Math.floor(Date.now() / 1000)).run();
+  return c.json({ code: inserted.meta.changes ? 0 : 409, msg: inserted.meta.changes ? '举报已提交，管理员将进行核查' : '你已举报过这条动态' }, inserted.meta.changes ? 200 : 409);
 });
 
 apiRouter.post('/user/posts/:id/like', async (c) => {
@@ -1449,14 +1678,22 @@ apiRouter.post('/user/notifications/read', async (c) => {
   return c.json({ code: 0, msg: '通知已标记为已读' });
 });
 
-apiRouter.post('/payment/notify', async (c) => {
-  let body: any;
-  try { body = await c.req.json(); }
-  catch {
-    try { body = Object.fromEntries(await c.req.formData()); }
-    catch { return c.json({ code: 400, msg: '支付通知格式无效' }, 400); }
+apiRouter.on(['GET', 'POST'], '/payment/notify', async (c) => {
+  let body: Record<string, unknown>;
+  if (c.req.method === 'GET') body = c.req.query();
+  else {
+    try { body = await c.req.json(); }
+    catch {
+      try { body = Object.fromEntries(await c.req.formData()); }
+      catch { return c.text('fail', 400); }
+    }
   }
+  const epay = body.pid !== undefined || body.out_trade_no !== undefined;
   try {
+    if (epay) {
+      await PaymentService.processEpayCallback(c.env, body);
+      return c.text('success');
+    }
     const result = await PaymentService.processCallback(c.env, {
       order_code: String(body.order_code || ''), amount_cents: Number(body.amount_cents),
       merchant_id: String(body.merchant_id || ''), provider_event_id: String(body.provider_event_id || ''),
@@ -1465,6 +1702,7 @@ apiRouter.post('/payment/notify', async (c) => {
     });
     return c.json({ code: 0, msg: result.already_paid ? '订单已完成' : '支付成功' });
   } catch (error) {
+    if (epay) return c.text(error instanceof Error ? error.message : 'fail', 400);
     return c.json({ code: 400, msg: error instanceof Error ? error.message : '支付通知处理失败' }, 400);
   }
 });
@@ -1574,8 +1812,46 @@ apiRouter.post('/mall/orders', async (c) => {
     return c.json({ code: 409, msg: '订单未能创建，已退还库存和积分' }, 409);
   }
   const orderId = Number(order[orderIndex].meta.last_row_id || 0);
-  return c.json({ code: 0, msg: totalPrice > 0 ? '订单已创建，等待管理员核验收款' : '订单已确认',
-    data: { order_id: orderId, order_code: code, status, total_price: totalPrice, total_points: totalPoints, discount_amount: discount, seckill_id: seckillId } });
+  let checkoutUrl = '';
+  let paymentError = '';
+  if (totalPrice > 0) {
+    try {
+      const paymentStatus = await PaymentService.status(c.env.DB);
+      if (paymentStatus.configured) {
+        const payment = await PaymentService.createMall(c.env, {
+          userId, orderId, orderCode: code, title: `${goods.goods_name} × ${quantity}`,
+          amountCents: Math.round(totalPrice * 100), origin: new URL(c.req.url).origin,
+        });
+        checkoutUrl = payment.checkout_url;
+      }
+    } catch (error) {
+      paymentError = error instanceof Error ? error.message : '生成支付链接失败';
+      console.error('Mall checkout creation failed:', error);
+    }
+  }
+  return c.json({ code: 0, msg: totalPrice > 0 ? (checkoutUrl ? '订单已创建，请在易支付收银台完成付款' : '订单已创建，等待管理员核验收款') : '订单已确认',
+    data: { order_id: orderId, order_code: code, status, total_price: totalPrice, total_points: totalPoints, discount_amount: discount, seckill_id: seckillId,
+      checkout_url: checkoutUrl, payment_error: paymentError } });
+});
+
+apiRouter.post('/mall/orders/:id/pay', async (c) => {
+  const userId = await getUserFromHeader(c);
+  if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '订单编号无效' }, 400);
+  try {
+    const order = await c.env.DB.prepare(`SELECT o.mall_order_id,o.order_code,o.total_price,o.status,g.goods_name
+      FROM mall_order o LEFT JOIN mall_goods g ON g.goods_id=o.goods_id WHERE o.mall_order_id=? AND o.user_id=?`)
+      .bind(id, userId).first<{ mall_order_id: number; order_code: string; total_price: number; status: number; goods_name: string }>();
+    if (!order || Number(order.status) !== 0 || Number(order.total_price) <= 0) return c.json({ code: 409, msg: '订单不存在、已取消或无需在线支付' }, 409);
+    const paymentStatus = await PaymentService.status(c.env.DB);
+    if (!paymentStatus.configured) return c.json({ code: 400, msg: '网站尚未配置易支付' }, 400);
+    const payment = await PaymentService.createMall(c.env, { userId, orderId: id, orderCode: order.order_code,
+      title: `${order.goods_name || '商城商品'} 订单`, amountCents: Math.round(Number(order.total_price) * 100), origin: new URL(c.req.url).origin });
+    return c.json({ code: 0, msg: '支付链接已生成', data: { order_code: order.order_code, checkout_url: payment.checkout_url, expires_at: payment.expires_at } });
+  } catch (error) {
+    return c.json({ code: 400, msg: error instanceof Error ? error.message : '生成支付链接失败' }, 400);
+  }
 });
 
 apiRouter.post('/mall/orders/:id/cancel', async (c) => {
@@ -1583,9 +1859,12 @@ apiRouter.post('/mall/orders/:id/cancel', async (c) => {
   if (!userId) return c.json({ code: 401, msg: '请先登录' }, 401);
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return c.json({ code: 400, msg: '订单编号无效' }, 400);
-  const result = await c.env.DB.prepare(`UPDATE mall_order SET status=3,updated_at=?
-    WHERE mall_order_id=? AND user_id=? AND status=0`).bind(Math.floor(Date.now() / 1000), id, userId).run();
-  if (!result.meta.changes) return c.json({ code: 409, msg: '仅待核款订单可以取消，或订单状态已变化' }, 409);
+  const result = await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE mall_order SET status=3,updated_at=? WHERE mall_order_id=? AND user_id=? AND status=0`)
+      .bind(Math.floor(Date.now() / 1000), id, userId),
+    c.env.DB.prepare("UPDATE payment_intent SET status='cancelled' WHERE mall_order_id=? AND status='pending' AND changes()=1").bind(id),
+  ]);
+  if (!result[0]?.meta.changes) return c.json({ code: 409, msg: '仅待核款订单可以取消，或订单状态已变化' }, 409);
   return c.json({ code: 0, msg: '订单已取消，积分、库存和优惠券已退回' });
 });
 
@@ -1623,7 +1902,7 @@ apiRouter.post('/danmaku/add', async (c) => {
   if ((recent?.c || 0) >= 5) return c.json({ code: 429, msg: '发送过于频繁，请稍后再试' }, 429);
   const userId = await getUserFromHeader(c);
   const user = userId ? await c.env.DB.prepare('SELECT user_name,user_nick FROM user WHERE user_id=? AND user_status=1').bind(userId).first<{ user_name: string; user_nick: string }>() : null;
-  const config = await VodService.getConfigs(c.env.DB);
+  const config = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
   const status = config.danmaku_audit === '0' ? 1 : 0;
   const result = await c.env.DB.prepare(`INSERT INTO danmaku (user_id,user_name,vod_id,episode_id,position_ms,color,content,status,client_ip,created_at)
     VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(userId, user?.user_nick || user?.user_name || '访客', vodId, Math.max(0, Number(body.episode_id) || 0),
@@ -1651,7 +1930,7 @@ apiRouter.post('/chatroom/send', async (c) => {
   if (recent) return c.json({ code: 429, msg: '发送太快，请稍后再试' }, 429);
   const user = await c.env.DB.prepare('SELECT user_name,user_nick FROM user WHERE user_id=? AND user_status=1').bind(userId).first<{ user_name: string; user_nick: string }>();
   if (!user) return c.json({ code: 403, msg: '会员账号不可用' }, 403);
-  const config = await VodService.getConfigs(c.env.DB);
+  const config = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
   const status = config.chat_audit === '0' ? 1 : 0;
   const result = await c.env.DB.prepare(`INSERT INTO chatroom_message (room_key,user_id,user_name,content,status,created_at)
     VALUES (?,?,?,?,?,?)`).bind(String(body.room || 'default').slice(0, 40), userId, user.user_nick || user.user_name, content, status, now).run();

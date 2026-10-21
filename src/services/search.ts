@@ -133,14 +133,15 @@ export class SearchService {
     const normalized = query.trim().toLocaleLowerCase().slice(0, 100);
     const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
     const queryHash = Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
-    await db.prepare('INSERT INTO search_query_log(query_hash,query_length,result_count,search_mode,created_at) VALUES(?,?,?,?,?)')
-      .bind(queryHash, normalized.length, Math.max(0, count), mode, Math.floor(Date.now() / 1000)).run();
+    const logging = await db.prepare("SELECT value FROM config WHERE key='search_terms_logging'").first<{ value: string }>();
+    await db.prepare('INSERT INTO search_query_log(query_hash,query_length,result_count,search_mode,created_at,query_text) VALUES(?,?,?,?,?,?)')
+      .bind(queryHash, normalized.length, Math.max(0, count), mode, Math.floor(Date.now() / 1000), logging?.value === '1' ? normalized : '').run();
   }
 
-  static async stats(db: D1Database, daysInput = 30): Promise<{ totals: { searches: number; empty: number; meilisearch: number }; days: any[] }> {
+  static async stats(db: D1Database, daysInput = 30): Promise<{ totals: { searches: number; empty: number; meilisearch: number }; days: any[]; hotwords: any[]; hotwords_enabled: boolean }> {
     const days = Math.max(1, Math.min(90, Math.trunc(daysInput) || 30));
     const since = Math.floor(Date.now() / 1000) - days * 86400;
-    const [totals, rows] = await Promise.all([
+    const [totals, rows, logging, hotwords] = await Promise.all([
       db.prepare(`SELECT COUNT(*) AS searches,SUM(CASE WHEN result_count=0 THEN 1 ELSE 0 END) AS empty,
         SUM(CASE WHEN search_mode='meilisearch' THEN 1 ELSE 0 END) AS meilisearch
         FROM search_query_log WHERE created_at>=?`).bind(since).first<{ searches: number; empty: number; meilisearch: number }>(),
@@ -148,7 +149,10 @@ export class SearchService {
         SUM(CASE WHEN result_count=0 THEN 1 ELSE 0 END) AS empty,AVG(result_count) AS average_results
         FROM search_query_log WHERE created_at>=? GROUP BY date(created_at,'unixepoch') ORDER BY day DESC LIMIT ?`)
         .bind(since, days).all(),
+      db.prepare("SELECT value FROM config WHERE key='search_terms_logging'").first<{ value: string }>(),
+      db.prepare(`SELECT query_text,COUNT(*) AS searches,SUM(CASE WHEN result_count=0 THEN 1 ELSE 0 END) AS empty
+        FROM search_query_log WHERE created_at>=? AND query_text<>'' GROUP BY query_text ORDER BY searches DESC LIMIT 30`).bind(since).all(),
     ]);
-    return { totals: { searches: Number(totals?.searches || 0), empty: Number(totals?.empty || 0), meilisearch: Number(totals?.meilisearch || 0) }, days: rows.results || [] };
+    return { totals: { searches: Number(totals?.searches || 0), empty: Number(totals?.empty || 0), meilisearch: Number(totals?.meilisearch || 0) }, days: rows.results || [], hotwords: logging?.value === '1' ? (hotwords.results || []) : [], hotwords_enabled: logging?.value === '1' };
   }
 }

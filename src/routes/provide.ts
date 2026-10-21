@@ -12,6 +12,7 @@ import { ActorService } from '../services/actor.ts';
 import { MacXmlUtils } from '../utils/xml.ts';
 import { WebsiteService } from '../services/website.ts';
 import { MangaService } from '../services/manga.ts';
+import { ContentTranslationService } from '../services/content-translation.ts';
 
 export const provideVodRouter = new Hono<{ Bindings: Bindings }>();
 export const provideArtRouter = new Hono<{ Bindings: Bindings }>();
@@ -39,7 +40,7 @@ export const handleProvideVod = async (c: any) => {
     (query.at === 'xml' || query.xt === '1' || c.req.path.endsWith('/apixml.php')) &&
     !c.req.path.endsWith('/apijson.php');
   if (isXml) {
-    const config = await VodService.getConfigs(c.env.DB);
+    const config = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
     if (config.app_allow_xml === '0') return c.json({ code: 403, msg: '站点已关闭 XML 提供接口' }, 403);
   }
   const filterPlay = (query.play || '').trim().toLowerCase();
@@ -57,6 +58,7 @@ export const handleProvideVod = async (c: any) => {
     ids,
     status: 1,
   });
+  result.list = await ContentTranslationService.apply(db, 'vod', result.list, query.lang);
 
   // 播放源过滤 (v8 特性)
   if (filterPlay) {
@@ -193,7 +195,7 @@ export const handleProvideArt = async (c: any) => {
     pagecount: result.pagecount,
     limit: String(result.limit),
     total: result.total,
-    list: result.list,
+    list: await ContentTranslationService.apply(c.env.DB, 'art', result.list, query.lang),
     class: types,
   }, 200, {
     'Access-Control-Allow-Origin': '*',
@@ -219,7 +221,7 @@ export const handleProvideActor = async (c: any) => {
     pagecount: result.pagecount,
     limit: String(result.limit),
     total: result.total,
-    list: result.list,
+    list: await ContentTranslationService.apply(c.env.DB, 'actor', result.list, query.lang),
   }, 200, {
     'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'public, max-age=60',
@@ -244,7 +246,7 @@ export const handleProvideRole = async (c: any) => {
     pagecount: result.pagecount,
     limit: String(result.limit),
     total: result.total,
-    list: result.list,
+    list: await ContentTranslationService.apply(c.env.DB, 'role', result.list, query.lang),
   }, 200, {
     'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'public, max-age=60',
@@ -258,7 +260,7 @@ provideRoleRouter.get('/*', handleProvideRole);
 export const handleProvideWebsite = async (c: any) => {
   const q = c.req.query();
   if (q.at === 'xml' || q.xt === '1') {
-    const config = await VodService.getConfigs(c.env.DB);
+    const config = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
     if (config.app_allow_xml === '0') return c.json({ code: 403, msg: '站点已关闭 XML 提供接口' }, 403);
   }
   const page = Math.max(1, parseInt(q.pg || q.page || '1', 10));
@@ -277,7 +279,8 @@ export const handleProvideWebsite = async (c: any) => {
     { type_id: type.type_id, type_name: type.type_name, type_pid: type.type_pid },
     ...(type.children || []).map((child: any) => ({ type_id: child.type_id, type_name: child.type_name, type_pid: child.type_pid })),
   ]);
-  const list = result.list.map((item: any) => ({
+  const translated = await ContentTranslationService.apply(c.env.DB, 'website', result.list, q.lang);
+  const list = translated.map((item: any) => ({
     ...item,
     website_time: item.website_time > 0
       ? new Date(item.website_time * 1000).toISOString().replace('T', ' ').slice(0, 19)
@@ -318,12 +321,13 @@ export const handleProvideManga = async (c: any) => {
   const q = c.req.query();
   const xmlMode = q.at === 'xml' || q.xt === '1';
   if (xmlMode) {
-    const config = await VodService.getConfigs(c.env.DB);
+    const config = await VodService.getConfigs(c.env.DB, new URL(c.req.url).hostname);
     if (config.app_allow_xml === '0') return c.json({ code: 403, msg: '站点已关闭 XML 提供接口' }, 403);
   }
   const page = Math.max(1, parseInt(q.pg || q.page || '1', 10) || 1);
   const limit = Math.min(50, Math.max(1, parseInt(q.limit || '20', 10) || 20));
   const result = await MangaService.query(c.env.DB, { page, limit, typeId: q.t ? parseInt(q.t, 10) : undefined, wd: q.wd, status: 1 });
+  result.list = await ContentTranslationService.apply(c.env.DB, 'manga', result.list, q.lang);
   const typesTree = await VodService.getTypes(c.env.DB, 12);
   const types = typesTree.flatMap((type: any) => [
     { type_id: type.type_id, type_name: type.type_name, type_pid: type.type_pid },

@@ -14,37 +14,7 @@
 </head>
 <body>
 
-<!-- 顶部导航 (public/head.html) -->
-<div id="conch-header" class="conch-header">
-  <div class="conch-headwrap">
-    <div class="container">
-      <div class="conch-logo">
-        <a class="hl-logo hl-logo-black" href="/" style="background-image: url(/static/theme/img/logo_black.png);"></a>
-        <a class="hl-logo hl-logo-white" href="/" style="background-image: url(/static/theme/img/logo_white.png);"></a>
-      </div>
-      <div class="conch-list conch-content">
-        <ul class="hl-list hl-text-muted clearfix">
-          <li class="hl-list-font hl-hidden-xs"><a href="javascript:;" title="观看记录"><i class="iconfont hl-icon-shijian"></i></a></li>
-          <li class="hl-list-font hl-hidden-xs"><a href="/type.html?by=time" title="最新"><i class="iconfont hl-icon-zuixin"></i></a></li>
-          <li class="hl-list-font hl-hidden-xs"><a href="/rank.html" title="排行"><i class="iconfont hl-icon-paihang"></i></a></li>
-          <li class="hl-list-font hl-hidden-xs"><a href="/admin/index.html" title="后台管理"><i class="iconfont hl-icon-shezhi"></i></a></li>
-        </ul>
-      </div>
-      <div class="conch-search">
-        <div class="hl-search-form">
-          <input type="text" id="searchInput" class="hl-search-text hl-search-wd" placeholder="请输入片名、演员或导演" autocomplete="off">
-          <button class="hl-search-submit" type="button" id="btnSearch"><i class="iconfont hl-icon-sousuo"></i></button>
-        </div>
-        <div class="hl-sh-box" id="suggestBox"></div>
-      </div>
-      <div class="conch-nav">
-        <div class="hl-nav-wrap hl-navswiper">
-          <ul class="hl-nav hl-text-site swiper-wrapper clearfix" id="mainNav"></ul>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+<div id="siteHeader"></div>
 
 <!-- 主体 (对齐 vod/show.html + module/filter.html) -->
 <div id="conch-content" class="conch-content">
@@ -81,46 +51,11 @@
   </div>
 </div>
 
-<!-- 页脚 (public/foot.html) -->
-<div id="conch-footer" class="conch-footer">
-  <div class="conch-footwrap hl-bg-subs hl-footnav-show">
-    <div class="container">
-      <div class="hl-footwrap-item">
-        <div class="hl-foot-extra">
-          <ul class="hl-fe-list clearfix">
-            <li class="hl-color-item"><a href="javascript:;" id="skinToggle"><i class="iconfont hl-icon-yueliang"></i><span id="skinText">深色模式</span></a></li>
-            <li class="hl-back-item"><a class="hl-back-top" href="javascript:window.scrollTo({top:0,behavior:'smooth'});"><i class="iconfont hl-icon-jiantoushang"></i><span>返回顶部</span></a></li>
-          </ul>
-        </div>
-        <div class="row">
-          <div class="hl-col-sm-8 hl-col-xs-12">
-            <div class="hl-foot-text hl-text-muted">
-              <p>© 2026 MacCMS Serverless Edition · 海螺影视主题 Conch_M003 · 100% 兼容 MacCMS 8/10 协议</p>
-            </div>
-            <div class="hl-map-nav hl-text-site hl-hidden-xs">
-              <a href="/">返回首页</a><span>—</span>
-              <a href="/rank.html">人气排行榜</a><span>—</span>
-              <a href="/topic.html">影视专题</a><span>—</span>
-              <a href="/art.html">新闻资讯</a><span>—</span>
-              <a href="/admin/index.html">管理后台</a>
-            </div>
-          </div>
-          <div class="hl-col-sm-4 hl-col-xs-12">
-            <div class="hl-foot-logo">
-              <a class="hl-logo hl-bright-0" href="/" style="background-image: url(/static/theme/img/logo_black.png);"></a>
-            </div>
-            <div class="hl-foot-copy hl-text-muted">
-              <p>&copy;&nbsp;2026&nbsp;MacCMS Serverless Edition</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+<div id="siteFooter"></div>
 
 <script src="/static/theme/js/jquery.min.js"></script>
 <script src="/static/theme/theme.js"></script>
+<script src="/static/theme/layout.js?v=20261021d"></script>
 <script>
 var params = new URLSearchParams(location.search);
 var curTypeId = parseInt(params.get('id') || '0', 10);
@@ -138,9 +73,12 @@ var filterOptions = null;
 
 $(function () {
   Theme.init().then(function () {
-    renderNav();
+    Layout.render(curTypeId ? 'type_' + curTypeId : 'type');
+    return API.get('/api/types');
+  }).then(function (result) {
+    allTypes = result && result.code === 0 && Array.isArray(result.data) ? result.data : [];
     bindEvents();
-    loadFilters().then(function () {
+    return loadFilters().then(function () {
       loadVods();
     });
   });
@@ -181,18 +119,6 @@ function bindEvents() {
     loadVods();
   });
 
-  // 搜索与皮肤
-  $('#btnSearch').on('click', function () {
-    var kw = $('#searchInput').val().trim();
-    if (kw) location.href = '/search.html?wd=' + encodeURIComponent(kw);
-  });
-  $('#searchInput').on('keydown', function (e) {
-    if (e.key === 'Enter') $('#btnSearch').click();
-  });
-  $('#skinToggle').on('click', function () {
-    Theme.toggleSkin();
-    $('#skinText').text(Theme.get('theme.style.color', '0') === '1' ? '浅色模式' : '深色模式');
-  });
 }
 
 function loadFilters() {

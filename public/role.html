@@ -20,8 +20,11 @@
         <h1 class="hl-rb-title" style="font-size:1.25rem;font-weight:800;">影视角色</h1>
         <span class="hl-rb-more hl-text-muted" id="roleMeta">正在载入…</span>
       </div>
-      <form id="roleSearch" style="display:flex;gap:8px;margin:12px 0;max-width:520px;">
-        <input id="roleKeyword" type="search" placeholder="搜索角色、演员或影视" style="flex:1;min-width:0;padding:9px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+      <form id="roleSearch" style="display:flex;gap:8px;margin:12px 0;max-width:860px;flex-wrap:wrap;">
+        <input id="roleKeyword" type="search" placeholder="搜索角色、演员或影视" style="flex:1 1 220px;min-width:0;padding:9px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+        <input id="roleArea" type="search" placeholder="地区" style="flex:0 1 120px;min-width:90px;padding:9px;border:1px solid var(--bd-color,#ddd);border-radius:6px;">
+        <select id="roleType" aria-label="按视频分类筛选角色" style="padding:9px;border:1px solid var(--bd-color,#ddd);border-radius:6px;"><option value="">全部分类</option></select>
+        <select id="roleLetter" style="padding:9px;border:1px solid var(--bd-color,#ddd);border-radius:6px;"><option value="">全部首字母</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option>G</option><option>H</option><option>I</option><option>J</option><option>K</option><option>L</option><option>M</option><option>N</option><option>O</option><option>P</option><option>Q</option><option>R</option><option>S</option><option>T</option><option>U</option><option>V</option><option>W</option><option>X</option><option>Y</option><option>Z</option></select>
         <button type="submit" style="padding:9px 16px;cursor:pointer;">搜索</button>
       </form>
       <ul id="roleList" class="hl-one-list clearfix" style="margin-top:14px;"></ul>
@@ -33,27 +36,35 @@
 <div id="siteFooter"></div>
 <script src="/static/theme/js/jquery.min.js"></script>
 <script src="/static/theme/theme.js"></script>
-<script src="/static/theme/layout.js"></script>
+<script src="/static/theme/layout.js?v=20261021d"></script>
 <script>
 var roleId = parseInt(new URLSearchParams(location.search).get('id') || '0', 10);
 var rolePage = Math.max(1, parseInt(new URLSearchParams(location.search).get('page') || '1', 10));
 var roleWd = new URLSearchParams(location.search).get('wd') || '';
+var roleArea = new URLSearchParams(location.search).get('area') || '';
+var roleLetter = new URLSearchParams(location.search).get('letter') || '';
+var roleTypeId = new URLSearchParams(location.search).get('type_id') || '';
 
 $(function () {
   Theme.init().then(function () {
     Layout.render('actor');
     $('#roleKeyword').val(roleWd);
+    $('#roleArea').val(roleArea);
+    $('#roleLetter').val(roleLetter);
+    $('#roleType').val(roleTypeId);
+    API.get('/api/types',{mid:1}).then(function(result){var types=[];(result.data||[]).forEach(function(item){types.push(item);(item.children||[]).forEach(function(child){types.push(child);});});$('#roleType').html('<option value="">全部分类</option>'+types.map(function(type){return '<option value="'+Number(type.type_id)+'">'+U.esc(type.type_name)+'</option>';}).join(''));$('#roleType').val(roleTypeId);});
     $('#roleSearch').on('submit', function (event) {
       event.preventDefault();
-      var wd = $('#roleKeyword').val().trim();
-      location.href = '/role.html' + (wd ? '?wd=' + encodeURIComponent(wd) : '');
+      var params = new URLSearchParams();
+      [['wd',$('#roleKeyword').val().trim()],['area',$('#roleArea').val().trim()],['letter',$('#roleLetter').val()],['type_id',$('#roleType').val()]].forEach(function(pair){if(pair[1])params.set(pair[0],pair[1]);});
+      location.href = '/role.html' + (params.toString() ? '?' + params.toString() : '');
     });
     if (roleId) loadRoleDetail(); else loadRoles();
   });
 });
 
 function loadRoles() {
-  API.get('/api/role/list', { page: rolePage, limit: 24, wd: roleWd }).then(function (result) {
+  API.get('/api/role/list', { page: rolePage, limit: 24, wd: roleWd, area: roleArea, letter: roleLetter, type_id: roleTypeId }).then(function (result) {
     var data = result.data || {};
     var rows = data.list || [];
     $('#roleMeta').text('共 ' + (data.total || 0) + ' 个角色');
@@ -69,7 +80,9 @@ function loadRoles() {
         '<div class="hl-lc-1" style="font-size:.8rem;color:var(--tx-mute,#888);">' + U.esc(role.role_vod_name || '') + '</div></a></li>';
     }).join(''));
     Interact.lazy($('#roleList')[0]);
-    $('#rolePager').html(Card.page(data.page, data.pagecount, '/role.html' + (roleWd ? '?wd=' + encodeURIComponent(roleWd) : '')));
+    var base = new URLSearchParams();[['wd',roleWd],['area',roleArea],['letter',roleLetter],['type_id',roleTypeId]].forEach(function(pair){if(pair[1])base.set(pair[0],pair[1]);});
+    var prefix='/role.html'+(base.toString()?'?'+base.toString():'');
+    $('#rolePager').html(Card.page(data.page, data.pagecount, prefix));
   }).catch(function () { $('#roleMeta').text('角色数据加载失败'); });
 }
 
@@ -89,8 +102,11 @@ function loadRoleDetail() {
       '<p>演员：' + (actor ? '<a href="/actor_detail.html?id=' + actor.actor_id + '">' + U.esc(actor.actor_name) + '</a>' : U.esc(role.role_actor_name || '暂无')) + '</p>' +
       '<p>影视：' + (vod ? '<a href="/detail.html?id=' + vod.vod_id + '">' + U.esc(vod.vod_name) + '</a>' : U.esc(role.role_vod_name || '暂无')) + '</p>' +
       (role.role_remarks ? '<p>备注：' + U.esc(role.role_remarks) + '</p>' : '') +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;"><button type="button" id="roleUp">顶 · '+Number(role.role_up||0)+'</button><button type="button" id="roleDown">踩 · '+Number(role.role_down||0)+'</button><span id="roleScoreLabel">评分 '+Number(role.role_score||0).toFixed(1)+'</span><select id="roleScoreInput" aria-label="角色评分"><option value="">评分 1–10</option>'+Array.from({length:10},function(_,i){return '<option value="'+(i+1)+'">'+(i+1)+' 分</option>';}).join('')+'</select><button type="button" id="roleScoreSubmit">提交评分</button></div><div id="roleActionMessage" class="hl-text-muted" style="font-size:.85rem;"></div>' +
       '<div style="line-height:1.8;white-space:pre-wrap;">' + U.esc(role.role_content || '暂无角色介绍') + '</div></div></div>';
     $('#roleDetail').html(html);
+    $('#roleUp,#roleDown').on('click',function(){var type=this.id==='roleUp'?'up':'down';API.post('/api/role/digg',{id:roleId,type:type}).then(function(result){$('#roleActionMessage').text(result.msg||'操作完成');if(result.data){$('#roleUp').text('顶 · '+Number(result.data.role_up||0));$('#roleDown').text('踩 · '+Number(result.data.role_down||0));}});});
+    $('#roleScoreSubmit').on('click',function(){var score=Number($('#roleScoreInput').val());if(!score){$('#roleActionMessage').text('请先选择 1 至 10 分');return;}API.post('/api/role/score',{id:roleId,score:score}).then(function(result){$('#roleActionMessage').text(result.msg||'评分完成');if(result.data)$('#roleScoreLabel').text('评分 '+Number(result.data.score||0).toFixed(1)+'（'+Number(result.data.votes||0)+' 人）');});});
   }).catch(function () { $('#roleDetail').html('<div class="hl-empty">角色数据加载失败</div>'); });
 }
 </script>

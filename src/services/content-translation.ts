@@ -1,5 +1,5 @@
 export const TRANSLATION_FIELDS: Record<string, string[]> = {
-  vod: ['vod_name', 'vod_sub', 'vod_blurb', 'vod_content', 'vod_remarks'],
+  vod: ['vod_name', 'vod_sub', 'vod_blurb', 'vod_content', 'vod_remarks', 'vod_plot_name', 'vod_plot_detail'],
   art: ['art_name', 'art_sub', 'art_blurb', 'art_content'],
   topic: ['topic_name', 'topic_sub', 'topic_blurb', 'topic_content'],
   actor: ['actor_name', 'actor_blurb', 'actor_remarks', 'actor_works', 'actor_content'],

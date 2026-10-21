@@ -15,9 +15,20 @@
     players: [],
     _ready: null,
 
+    /** Load the unified Worker/Pages video UI after the legacy theme base styles. */
+    _injectDesignSystem: function () {
+      if (document.getElementById('maccms-serverless-video-ui')) return;
+      const link = document.createElement('link');
+      link.id = 'maccms-serverless-video-ui';
+      link.rel = 'stylesheet';
+      link.href = '/static/theme/css/serverless-video.css?v=20261021g';
+      document.head.appendChild(link);
+    },
+
     /** 拉取主题配置并注入运行时 CSS */
     init: function () {
       if (this._ready) return this._ready;
+      this._injectDesignSystem();
       this._ready = fetch('/api/theme')
         .then(r => r.json())
         .then(json => {
@@ -113,6 +124,10 @@
           if (v !== undefined && v !== null && v !== '') u.searchParams.set(k, v);
         });
       }
+      try {
+        const language = localStorage.getItem('maccms_content_language') || '';
+        if (language && !u.searchParams.has('lang')) u.searchParams.set('lang', language);
+      } catch (e) {}
       const token = localStorage.getItem('maccms_user_token') || '';
       const r = await fetch(u.toString(), { headers: token ? { Authorization: 'Bearer ' + token } : {} });
       return r.json();

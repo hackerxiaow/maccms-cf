@@ -278,7 +278,10 @@ cloudAdminRouter.get('/data/:resource', async (c) => {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const total = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM ${resource.table} ${where}`)
     .bind(...params).first<{ c: number }>();
-  const rows = await c.env.DB.prepare(`SELECT * FROM ${resource.table} ${where}
+  const projection = c.req.param('resource') === 'mall-orders'
+    ? `*,(SELECT status FROM payment_intent p WHERE p.mall_order_id=mall_order.mall_order_id ORDER BY payment_id DESC LIMIT 1) AS payment_status`
+    : '*';
+  const rows = await c.env.DB.prepare(`SELECT ${projection} FROM ${resource.table} ${where}
     ORDER BY ${resource.id} DESC LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
   const count = total?.c || 0;
   return c.json({ code: 0, data: { page, limit, total: count, pagecount: Math.max(1, Math.ceil(count / limit)), list: rows.results || [] } });
@@ -354,9 +357,12 @@ cloudAdminRouter.post('/orders/:id/status', async (c) => {
   const target = Number(body.status);
   if (!Number.isInteger(id) || id <= 0 || ![1, 2, 3].includes(target)) return c.json({ code: 400, msg: '订单或目标状态无效' }, 400);
   const expected = target === 2 ? 1 : 0;
-  const result = await c.env.DB.prepare('UPDATE mall_order SET status=?,updated_at=? WHERE mall_order_id=? AND status=?')
-    .bind(target, Math.floor(Date.now() / 1000), id, expected).run();
-  if (!result.meta.changes) return c.json({ code: 409, msg: '订单状态已变化，刷新后重试' }, 409);
+  const result = await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE mall_order SET status=?,updated_at=? WHERE mall_order_id=? AND status=?')
+      .bind(target, Math.floor(Date.now() / 1000), id, expected),
+    ...(target === 1 || target === 3 ? [c.env.DB.prepare("UPDATE payment_intent SET status='cancelled' WHERE mall_order_id=? AND status='pending' AND changes()=1").bind(id)] : []),
+  ]);
+  if (!result[0]?.meta.changes) return c.json({ code: 409, msg: '订单状态已变化，刷新后重试' }, 409);
   const labels: Record<number, string> = { 1: '已确认收款', 2: '已完成履约', 3: '已取消并退回积分、库存和优惠券' };
   return c.json({ code: 0, msg: labels[target] });
 });
@@ -518,6 +524,32 @@ cloudAdminRouter.post('/posts/:id/status', async (c) => {
       FROM user_post WHERE post_id=?`).bind(now, id).run();
   }
   return c.json({ code: 0, msg: status === 1 ? '动态已发布' : status === 2 ? '动态已驳回' : '动态已设为待审核' });
+});
+
+cloudAdminRouter.get('/posts/reports', async (c) => {
+  const status = String(c.req.query('status') || 'open');
+  const rows = status === 'all'
+    ? await c.env.DB.prepare(`SELECT r.*,p.content,p.status AS post_status,u.user_name,u.user_nick,reporter.user_name AS reporter_name,reporter.user_nick AS reporter_nick
+        FROM user_post_report r JOIN user_post p ON p.post_id=r.post_id JOIN user u ON u.user_id=p.user_id JOIN user reporter ON reporter.user_id=r.user_id
+        ORDER BY CASE r.status WHEN 'open' THEN 0 ELSE 1 END,r.created_at DESC LIMIT 300`).all()
+    : await c.env.DB.prepare(`SELECT r.*,p.content,p.status AS post_status,u.user_name,u.user_nick,reporter.user_name AS reporter_name,reporter.user_nick AS reporter_nick
+        FROM user_post_report r JOIN user_post p ON p.post_id=r.post_id JOIN user u ON u.user_id=p.user_id JOIN user reporter ON reporter.user_id=r.user_id
+        WHERE r.status=? ORDER BY r.created_at DESC LIMIT 300`).bind(status).all();
+  return c.json({ code: 0, data: rows.results || [] });
+});
+
+cloudAdminRouter.post('/posts/reports/:id/status', async (c) => {
+  const id = Number(c.req.param('id')), body = await c.req.json().catch(() => ({}));
+  const action = String(body.action || 'reviewed');
+  if (!Number.isInteger(id) || id <= 0 || !['reviewed','dismissed','hide'].includes(action)) return c.json({ code: 400, msg: '举报处理参数无效' }, 400);
+  const report = await c.env.DB.prepare('SELECT report_id,post_id FROM user_post_report WHERE report_id=?').bind(id).first<{ report_id: number; post_id: number }>();
+  if (!report) return c.json({ code: 404, msg: '举报记录不存在' }, 404);
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE user_post_report SET status=?,reviewed_at=? WHERE report_id=?').bind(action === 'hide' ? 'reviewed' : action, now, id),
+    ...(action === 'hide' ? [c.env.DB.prepare('UPDATE user_post SET status=2 WHERE post_id=?').bind(report.post_id)] : []),
+  ]);
+  return c.json({ code: 0, msg: action === 'hide' ? '举报已处理，动态已下架' : action === 'dismissed' ? '举报已标记为不成立' : '举报已标记为已核查' });
 });
 
 cloudAdminRouter.get('/accounts/roles', async (c) => {
@@ -783,7 +815,7 @@ cloudAdminRouter.post('/ai/generate', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   try {
     const suggestion = await AiService.generate(c.env, {
-      model: String(body.model || ''), recordId: Number(body.record_id), task: String(body.task || 'summary') as 'summary' | 'metadata' | 'seo',
+      model: String(body.model || ''), recordId: Number(body.record_id), task: String(body.task || 'summary') as 'summary' | 'metadata' | 'seo' | 'recommendations' | 'quality' | 'profile',
     });
     return c.json({ code: 0, msg: 'AI 建议已生成；请审核后再复制到内容字段', data: { suggestion } });
   } catch (error) {
@@ -851,7 +883,7 @@ cloudAdminRouter.post('/notifications/send', async (c) => {
 });
 
 cloudAdminRouter.get('/monitor', async (c) => {
-  const tableNames = ['vod','art','topic','manga','actor','role','website','user','collect_node','comment','gbook','live_channel','media_asset','telegram_storage_account','user_invite_code','user_invite_reward','user_wallet','cash_withdrawal','user_post','user_notification','payment_intent','content_translation','resource_check_item'];
+  const tableNames = ['vod','art','topic','manga','actor','role','website','user','site_page','site_host_config','collect_node','comment','gbook','live_channel','media_asset','telegram_storage_account','user_invite_code','user_invite_reward','user_wallet','cash_withdrawal','user_post','user_post_like','user_post_comment','user_post_report','user_post_attachment','role_vote','role_score_vote','user_notification','payment_intent','playback_trial_session','content_translation','resource_check_item'];
   const counts = await Promise.all(tableNames.map(async (table) => {
     try {
       const row = await c.env.DB.prepare(`SELECT COUNT(*) AS c FROM ${table}`).first<{ c: number }>();
@@ -955,6 +987,14 @@ cloudAdminRouter.post('/media/delete', async (c) => {
     const referenced = await c.env.DB.prepare("SELECT COUNT(*) AS c FROM media_sync_item WHERE status='done' AND target_url=?")
       .bind(media.public_url).first<{ c: number }>();
     if ((referenced?.c || 0) > 0) { skipped.push({ media_id: id, reason: '仍被内容引用，请先恢复原图' }); continue; }
+    const postReferences = await c.env.DB.prepare('SELECT COUNT(*) AS c FROM user_post_attachment WHERE media_id=?').bind(id).first<{ c: number }>();
+    if ((postReferences?.c || 0) > 0) { skipped.push({ media_id: id, reason: '仍被会员动态引用，暂不能删除' }); continue; }
+    const imageRefs = await Promise.all(IMAGE_SOURCES.map(async (source) => {
+      const expression = source.fields.map((field) => `CASE WHEN instr(COALESCE(${field},''),?)>0 THEN 1 ELSE 0 END`).join('+');
+      const ref = await c.env.DB.prepare(`SELECT COALESCE(SUM(${expression}),0) AS c FROM ${source.table}`).bind(...source.fields.map(() => media.public_url)).first<{ c: number }>();
+      return Number(ref?.c || 0);
+    }));
+    if (imageRefs.some((count) => count > 0)) { skipped.push({ media_id: id, reason: '仍被内容图片字段引用，请先替换图片地址' }); continue; }
     if (await memberAvatarReferenceCount(c.env.DB, media.public_url)) { skipped.push({ media_id: id, reason: '仍作为会员头像使用，请先更换头像' }); continue; }
     try {
       if (media.storage_provider === 'telegraph') await deleteFromTelegraph(settings, media.public_url);

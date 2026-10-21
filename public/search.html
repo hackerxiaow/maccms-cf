@@ -24,6 +24,7 @@
           <i class="iconfont hl-icon-sousuo"></i>
         </button>
       </div>
+      <div id="semanticSearchTools" style="display:none;margin-top:10px;text-align:right"><button id="semanticSearchButton" type="button" style="padding:8px 13px;border:1px solid var(--hl-site,#09f);border-radius:18px;background:transparent;color:var(--hl-site,#09f);cursor:pointer">AI 自然语言搜索</button><span id="semanticSearchHint" class="hl-text-muted" style="margin-left:8px;font-size:.85rem"></span></div>
     </div>
 
     <!-- 搜索类型切换 -->
@@ -55,7 +56,7 @@
 
 <script src="/static/theme/js/jquery.min.js"></script>
 <script src="/static/theme/theme.js"></script>
-<script src="/static/theme/layout.js"></script>
+<script src="/static/theme/layout.js?v=20261021d"></script>
 <script>
 $(function () {
   Theme.init().then(function () {
@@ -129,6 +130,18 @@ $(function () {
     }
 
     doSearchResult();
+
+    API.get('/api/search/semantic/status').then(function(result){if(result.code===0&&result.data&&result.data.enabled)$('#semanticSearchTools').show();});
+    $('#semanticSearchButton').on('click',function(){
+      var query=$('#searchInput2').val().trim();if(query.length<2){$('#semanticSearchHint').text('输入一句自然语言描述');return;}
+      var button=$(this);button.prop('disabled',true);$('#semanticSearchHint').text('AI 正在从站内候选内容中排序…');
+      fetch('/api/search/semantic',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:query})}).then(function(response){return response.json();}).then(function(result){
+        if(result.code!==0)throw new Error(result.msg||'智能搜索失败');
+        var items=(result.data&&result.data.items)||[];$('#searchMeta').text('智能搜索：找到 '+items.length+' 条候选');$('#pager').empty();$('#searchEmpty').toggle(items.length===0);
+        $('#searchList').html(items.map(function(item){var title=U.esc(item.title||'');var picture=U.esc(item.pic||U.placeholder(item.title||'',U.hash(item.title||'')));var url=item.model==='art'?'/art.html?id='+Number(item.id):'/detail.html?id='+Number(item.id);return '<li class="hl-list-item hl-col-xs-12 hl-col-sm-6" style="padding:8px"><a href="'+url+'" style="display:flex;gap:12px;align-items:center;padding:10px;border:1px solid var(--bd-color,#eee);border-radius:9px;color:inherit"><img src="'+picture+'" alt="" loading="lazy" style="width:72px;height:96px;object-fit:cover;border-radius:6px"><span><strong>'+title+'</strong><small style="display:block;margin-top:6px;color:var(--tx-mute,#777)">'+U.esc(item.reason||item.summary||'')+'</small></span></a></li>';}).join(''));
+        $('#semanticSearchHint').text(items.length?'结果按描述相关度排序':'没有找到合适的候选，请换一种描述');
+      }).catch(function(error){$('#semanticSearchHint').text(error.message||'智能搜索暂不可用');}).finally(function(){button.prop('disabled',false);});
+    });
 
   });
 });
